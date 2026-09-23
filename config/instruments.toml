@@ -1,0 +1,67 @@
+# Quadrium Supported Instruments
+
+[[instruments]]
+symbol = "XAUUSD"
+name = "Gold vs USD"
+category = "metals"
+pip_value = 0.01
+lot_size = 100
+min_lot = 0.01
+max_lot = 100.0
+lot_step = 0.01
+enabled = true
+
+[[instruments]]
+symbol = "EURUSD"
+name = "Euro vs USD"
+category = "forex"
+pip_value = 0.0001
+lot_size = 100_000
+min_lot = 0.01
+max_lot = 100.0
+lot_step = 0.01
+enabled = true
+
+[[instruments]]
+symbol = "GBPUSD"
+name = "British Pound vs USD"
+category = "forex"
+pip_value = 0.0001
+lot_size = 100_000
+min_lot = 0.01
+max_lot = 100.0
+lot_step = 0.01
+enabled = true
+
+[[instruments]]
+symbol = "USDJPY"
+name = "USD vs Japanese Yen"
+category = "forex"
+pip_value = 0.01
+lot_size = 100_000
+min_lot = 0.01
+max_lot = 100.0
+lot_step = 0.01
+enabled = true
+
+[[instruments]]
+symbol = "GBPJPY"
+name = "British Pound vs Japanese Yen"
+category = "forex"
+pip_value = 0.01
+lot_size = 100_000
+min_lot = 0.01
+max_lot = 100.0
+lot_step = 0.01
+enabled = true
+
+[[instruments]]
+symbol = "XAGUSD"
+name = "Silver vs USD"
+category = "metals"
+pip_value = 0.001
+lot_size = 5000
+min_lot = 0.01
+max_lot = 100.0
+lot_step = 0.01
+enabled = true

@@ -1,0 +1,50 @@
+# Quadrium Default Configuration
+
+[app]
+name = "Quadrium"
+version = "0.1.0"
+env = "development"
+log_level = "INFO"
+
+[api]
+host = "127.0.0.1"
+port = 8000
+cors_origins = ["http://localhost:5173"]
+docs_enabled = true
+
+[database]
+sqlite_path = "data/quadrium.db"
+duckdb_path = "data/quadrium_analytics.duckdb"
+
+[data]
+raw_dir = "data/raw"
+processed_dir = "data/processed"
+models_dir = "models"
+strategies_dir = "strategies"
+logs_dir = "logs"
+
+[gpu]
+device = "auto"  # "auto", "cuda", "cpu"
+mixed_precision = true
+pin_memory = true
+num_workers = 4
+
+[training]
+default_batch_size = 32
+default_learning_rate = 0.0003
+default_total_timesteps = 100_000
+replay_buffer_device = "cpu"
+gradient_checkpointing = false
+
+[backtest]
+default_spread_pips = 2.0
+default_commission = 0.0
+default_slippage_pips = 0.5
+
+[mt5]
+enabled = false
+connection_timeout_seconds = 10
+retry_attempts = 3
+retry_delay_seconds = 5
+circuit_breaker_threshold = 3
+circuit_breaker_recovery_seconds = 60

@@ -1,0 +1,30 @@
+# FTMO Challenge Rule Profile
+# Reference: https://ftmo.com/en/trading-objectives/
+
+[profile]
+name = "FTMO Challenge"
+account_sizes = [10000, 25000, 50000, 100000, 200000]
+
+[rules]
+max_overall_drawdown_pct = 0.10
+drawdown_type = "static"
+max_daily_loss_pct = 0.05
+daily_loss_includes_floating = true
+daily_reset_timezone = "Europe/Prague"
+
+[[phases]]
+name = "Phase 1 (Challenge)"
+profit_target_pct = 0.10
+min_trading_days = 4
+max_calendar_days = 30
+
+[[phases]]
+name = "Phase 2 (Verification)"
+profit_target_pct = 0.05
+min_trading_days = 4
+max_calendar_days = 60
+
+[[consistency_rules]]
+rule_type = "max_day_share"
+threshold_pct = 0.30
+calculation_base = "total_profit"

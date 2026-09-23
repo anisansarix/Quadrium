@@ -1,0 +1,49 @@
+# Quadrium Timeframe Definitions
+
+[[timeframes]]
+name = "M1"
+label = "1 Minute"
+minutes = 1
+mt5_constant = "TIMEFRAME_M1"
+
+[[timeframes]]
+name = "M5"
+label = "5 Minutes"
+minutes = 5
+mt5_constant = "TIMEFRAME_M5"
+
+[[timeframes]]
+name = "M15"
+label = "15 Minutes"
+minutes = 15
+mt5_constant = "TIMEFRAME_M15"
+
+[[timeframes]]
+name = "M30"
+label = "30 Minutes"
+minutes = 30
+mt5_constant = "TIMEFRAME_M30"
+
+[[timeframes]]
+name = "H1"
+label = "1 Hour"
+minutes = 60
+mt5_constant = "TIMEFRAME_H1"
+
+[[timeframes]]
+name = "H4"
+label = "4 Hours"
+minutes = 240
+mt5_constant = "TIMEFRAME_H4"
+
+[[timeframes]]
+name = "D1"
+label = "Daily"
+minutes = 1440
+mt5_constant = "TIMEFRAME_D1"
+
+[[timeframes]]
+name = "W1"
+label = "Weekly"
+minutes = 10080
+mt5_constant = "TIMEFRAME_W1"

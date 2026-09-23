@@ -1,0 +1,31 @@
+# Prop Firm Profile Template
+# Copy this file and modify for each prop firm.
+
+[profile]
+name = "Template Firm"
+account_sizes = [5000, 10000, 25000]
+
+[rules]
+max_overall_drawdown_pct = 0.08      # 8% max overall drawdown
+drawdown_type = "static"              # "static" or "trailing"
+max_daily_loss_pct = 0.05             # 5% max daily loss
+daily_loss_includes_floating = true   # Include unrealized P&L
+daily_reset_timezone = "UTC"          # Server timezone for day reset
+
+[[phases]]
+name = "Phase 1"
+profit_target_pct = 0.08              # 8% profit target
+min_trading_days = 5
+max_calendar_days = 30
+
+[[phases]]
+name = "Phase 2"
+profit_target_pct = 0.05              # 5% profit target
+min_trading_days = 5
+max_calendar_days = 60
+
+# Optional: consistency rules
+# [[consistency_rules]]
+# rule_type = "max_day_share"          # or "max_trade_share"
+# threshold_pct = 0.40
+# calculation_base = "total_profit"    # or "total_pnl"

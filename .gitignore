@@ -1,5 +1,57 @@
-# Logs
-logs
+# === Node / Frontend ===
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# === Python / Backend ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+*.whl
+.venv/
+venv/
+env/
+.uv/
+.python-version
+
+# === Data & ML Artifacts (large, local-only) ===
+data/
+models/
+mlruns/
+logs/
+
+# === Generated Strategies ===
+strategies/pine/*.pine
+strategies/mql5/*.mq5
+
+# === Secrets ===
+.env
+.env.local
+.env.*.local
+
+# === IDE / Editor ===
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*~
+
+# === OS ===
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# === Build ===
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,18 +59,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# === Misc ===
+scratch/
 *.local
-
-# Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
-.DS_Store
-*.suo
-*.ntvs*
-*.njsproj
-*.sln
-*.sw?
