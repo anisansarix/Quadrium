@@ -4,9 +4,9 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
+from app.core.exceptions import DataError
 from app.models.schemas import APIResponse
 from app.services.data_service import DataService
-from app.core.exceptions import DataError
 
 router = APIRouter(prefix="/data", tags=["data"])
 

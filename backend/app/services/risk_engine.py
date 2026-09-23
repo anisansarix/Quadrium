@@ -1,7 +1,9 @@
 from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
+
 import numpy as np
+
 
 @dataclass
 class Trade:
@@ -55,22 +57,22 @@ class RiskEngine:
         """Peak-to-trough maximum drawdown (absolute and %)."""
         if len(equity_curve) == 0:
             return DrawdownResult(Decimal('0'), Decimal('0'))
-            
+
         peak = equity_curve[0]
         max_dd_abs = 0.0
         max_dd_pct = 0.0
-        
+
         for val in equity_curve:
             if val > peak:
                 peak = val
             dd_abs = peak - val
             dd_pct = dd_abs / peak if peak > 0 else 0.0
-            
+
             if dd_abs > max_dd_abs:
                 max_dd_abs = dd_abs
             if dd_pct > max_dd_pct:
                 max_dd_pct = dd_pct
-                
+
         return DrawdownResult(
             max_drawdown_abs=Decimal(str(max_dd_abs)),
             max_drawdown_pct=Decimal(str(max_dd_pct))
@@ -81,23 +83,23 @@ class RiskEngine:
         """Trailing drawdown from highest watermark relative to initial balance."""
         if len(equity_curve) == 0:
             return TrailingDrawdownResult(Decimal('0'), Decimal('0'))
-            
+
         peak = float(initial_balance)
         max_dd_abs = 0.0
         max_dd_pct = 0.0
-        
+
         for val in equity_curve:
             if val > peak:
                 peak = val
             dd_abs = peak - val
             # Trailing DD % is usually calculated based on the initial balance (prop firm style)
             dd_pct = dd_abs / float(initial_balance) if float(initial_balance) > 0 else 0.0
-            
+
             if dd_abs > max_dd_abs:
                 max_dd_abs = dd_abs
             if dd_pct > max_dd_pct:
                 max_dd_pct = dd_pct
-                
+
         return TrailingDrawdownResult(
             max_drawdown_abs=Decimal(str(max_dd_abs)),
             max_drawdown_pct=Decimal(str(max_dd_pct))
@@ -109,17 +111,17 @@ class RiskEngine:
         import pandas as pd
         if not trades:
             return []
-            
+
         daily = {}
         for t in trades:
             # Note: in real implementation, timezone conversion is needed
-            # For simplicity here, we assume exit_time is pandas Timestamp or datetime 
+            # For simplicity here, we assume exit_time is pandas Timestamp or datetime
             date_str = pd.Timestamp(t.exit_time).tz_convert(timezone).strftime("%Y-%m-%d") if hasattr(pd.Timestamp(t.exit_time), "tz_convert") and pd.Timestamp(t.exit_time).tz else pd.Timestamp(t.exit_time).strftime("%Y-%m-%d")
-            
+
             if date_str not in daily:
                 daily[date_str] = Decimal('0')
             daily[date_str] += t.pnl
-            
+
         result = [DailyPnL(date=k, pnl=v) for k, v in sorted(daily.items())]
         return result
 
@@ -134,20 +136,20 @@ class RiskEngine:
         daily_pnls = RiskEngine.daily_pnl(trades, timezone)
         results = []
         current_balance = float(start_balance)
-        
+
         for d in daily_pnls:
             loss = 0.0
             if float(d.pnl) < 0:
                 loss = abs(float(d.pnl))
-                
+
             loss_pct = loss / current_balance if current_balance > 0 else 0.0
             results.append(DailyLoss(
-                date=d.date, 
-                max_loss_abs=Decimal(str(loss)), 
+                date=d.date,
+                max_loss_abs=Decimal(str(loss)),
                 max_loss_pct=Decimal(str(loss_pct))
             ))
             current_balance += float(d.pnl)
-            
+
         return results
 
     @staticmethod
@@ -233,15 +235,15 @@ class RiskEngine:
         """
         if not daily_pnl:
             return ConsistencyResult(True, Decimal('0'), Decimal('0'))
-            
+
         profits = [float(d.pnl) for d in daily_pnl if float(d.pnl) > 0]
         if not profits:
             return ConsistencyResult(True, Decimal('0'), Decimal('0'))
-            
+
         total_profit = sum(profits)
         max_day = max(profits)
         max_day_share = max_day / total_profit
-        
+
         passed = max_day_share <= float(threshold_pct)
         return ConsistencyResult(
             passed=passed,

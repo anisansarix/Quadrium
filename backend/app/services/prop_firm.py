@@ -1,14 +1,13 @@
 import tomllib
 from dataclasses import dataclass, field
 from decimal import Decimal
-from typing import List, Optional, Tuple
 from pathlib import Path
+
 import numpy as np
 
-from app.models.enums import DrawdownType, ConsistencyType, ChallengeResult
-from app.services.risk_engine import RiskEngine, Trade, DailyPnL
-from app.config import settings
 from app.core.logging import get_logger
+from app.models.enums import ChallengeResult, ConsistencyType, DrawdownType
+from app.services.risk_engine import RiskEngine, Trade
 
 log = get_logger(__name__)
 
@@ -23,7 +22,7 @@ class ChallengePhase:
     name: str
     profit_target_pct: Decimal
     min_trading_days: int
-    max_calendar_days: Optional[int] = None
+    max_calendar_days: int | None = None
 
 @dataclass
 class PropFirmProfile:
@@ -34,8 +33,8 @@ class PropFirmProfile:
     max_daily_loss_pct: Decimal
     daily_loss_includes_floating: bool
     daily_reset_timezone: str
-    phases: List[ChallengePhase] = field(default_factory=list)
-    consistency_rules: List[ConsistencyRule] = field(default_factory=list)
+    phases: list[ChallengePhase] = field(default_factory=list)
+    consistency_rules: list[ConsistencyRule] = field(default_factory=list)
 
 class PropFirmSimulator:
     """Evaluates a trade history against a PropFirmProfile."""
@@ -46,19 +45,19 @@ class PropFirmSimulator:
         profiles = {}
         if not directory.exists():
             return profiles
-            
+
         for toml_file in directory.glob("*.toml"):
             if toml_file.name.startswith("_"):
                 continue # Skip templates
             try:
                 with open(toml_file, "rb") as f:
                     data = tomllib.load(f)
-                    
+
                 profile_data = data.get("profile", {})
                 rules_data = data.get("rules", {})
                 phases_data = data.get("phases", [])
                 consistency_data = data.get("consistency_rules", [])
-                
+
                 phases = [
                     ChallengePhase(
                         name=p.get("name", "Phase"),
@@ -68,7 +67,7 @@ class PropFirmSimulator:
                     )
                     for p in phases_data
                 ]
-                
+
                 consistency = [
                     ConsistencyRule(
                         rule_type=ConsistencyType(c.get("rule_type")),
@@ -77,11 +76,11 @@ class PropFirmSimulator:
                     )
                     for c in consistency_data
                 ]
-                
+
                 # We pick the first account size as default, or allow dynamic selection later
                 account_sizes = profile_data.get("account_sizes", [100000])
                 account_size = Decimal(str(account_sizes[0]))
-                
+
                 profile = PropFirmProfile(
                     name=profile_data.get("name", "Unknown Profile"),
                     account_size=account_size,
@@ -96,14 +95,14 @@ class PropFirmSimulator:
                 profiles[toml_file.stem] = profile
             except Exception as e:
                 log.error("Failed to load prop firm profile", file=toml_file.name, error=str(e))
-                
+
         return profiles
 
     @classmethod
     def evaluate(
         cls,
         profile: PropFirmProfile,
-        trades: List[Trade],
+        trades: list[Trade],
         initial_balance: Decimal,
         equity_curve: np.ndarray
     ) -> dict:
@@ -112,9 +111,9 @@ class PropFirmSimulator:
         """
         if not trades:
             return cls._result_payload(ChallengeResult.IN_PROGRESS, "No trades taken yet")
-            
+
         current_balance = initial_balance + sum(t.pnl for t in trades)
-        
+
         # 1. Overall Drawdown Check
         if profile.drawdown_type == DrawdownType.TRAILING:
             dd = RiskEngine.drawdown_trailing(equity_curve, initial_balance)
@@ -130,37 +129,37 @@ class PropFirmSimulator:
 
         if float(dd.max_drawdown_pct) > float(profile.max_overall_drawdown_pct):
             return cls._result_payload(
-                ChallengeResult.FAILED, 
+                ChallengeResult.FAILED,
                 f"Overall Drawdown breach: {float(dd.max_drawdown_pct):.2%} > {float(profile.max_overall_drawdown_pct):.2%}"
             )
-            
+
         # 2. Daily Loss Check
         daily_losses = RiskEngine.daily_loss(trades, initial_balance, profile.daily_reset_timezone, profile.daily_loss_includes_floating)
         max_daily_loss_pct = max((float(dl.max_loss_pct) for dl in daily_losses), default=0.0)
-        
+
         if max_daily_loss_pct > float(profile.max_daily_loss_pct):
             return cls._result_payload(
                 ChallengeResult.FAILED,
                 f"Daily Loss breach: {max_daily_loss_pct:.2%} > {float(profile.max_daily_loss_pct):.2%}"
             )
-            
+
         # 3. Phase / Profit Target Check
         # For simplicity, we evaluate against Phase 1 (index 0) if phases exist
         if profile.phases:
             phase = profile.phases[0]
             profit_target = initial_balance * phase.profit_target_pct
             current_profit = current_balance - initial_balance
-            
+
             # Trading days
             daily_pnl = RiskEngine.daily_pnl(trades, profile.daily_reset_timezone)
             trading_days = len(daily_pnl)
-            
+
             if trading_days < phase.min_trading_days:
                 return cls._result_payload(ChallengeResult.IN_PROGRESS, f"Minimum trading days not met ({trading_days}/{phase.min_trading_days})")
-                
+
             if current_profit < profit_target:
                 return cls._result_payload(ChallengeResult.IN_PROGRESS, f"Profit target not met ({current_profit}/{profit_target})")
-                
+
         # 4. Consistency Rules Check
         if profile.consistency_rules:
             for rule in profile.consistency_rules:
@@ -169,7 +168,7 @@ class PropFirmSimulator:
                     cons_res = RiskEngine.consistency_score(daily_pnl, rule.threshold_pct)
                     if not cons_res.passed:
                         return cls._result_payload(ChallengeResult.FAILED, f"Consistency breach: Max day share {float(cons_res.max_day_share):.2%} > {float(rule.threshold_pct):.2%}")
-                
+
         return cls._result_payload(ChallengeResult.PASSED, "All requirements met")
 
     @staticmethod

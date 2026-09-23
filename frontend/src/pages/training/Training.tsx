@@ -4,6 +4,7 @@ import { PlaySquare } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import { useStartTraining } from "@/api/hooks"
 
 const mockData = [
   { epoch: 10, loss: 0.5 },
@@ -14,6 +15,16 @@ const mockData = [
 ]
 
 export function Training() {
+  const startJob = useStartTraining()
+  
+  const handleStart = () => {
+    startJob.mutate({
+      dataset_id: "test-dataset-123",
+      experiment_id: "e2e_test",
+      total_timesteps: 100
+    })
+  }
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -21,9 +32,9 @@ export function Training() {
           <h1 className="text-2xl font-bold tracking-tight">Training</h1>
           <p className="text-muted-foreground">Monitor live ML training jobs.</p>
         </div>
-        <Button>
+        <Button onClick={handleStart} disabled={startJob.isPending}>
           <PlaySquare className="mr-2 h-4 w-4" />
-          Start Job
+          {startJob.isPending ? "Starting..." : "Start Job"}
         </Button>
       </div>
 

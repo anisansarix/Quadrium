@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from pathlib import Path
-from typing import AsyncGenerator
 
 import duckdb
 from sqlalchemy import MetaData

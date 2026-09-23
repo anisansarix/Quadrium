@@ -9,7 +9,6 @@ from typing import Any
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 # Resolve project root (two levels up from this file: backend/app/config.py → project root)
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _PROJECT_ROOT = _BACKEND_DIR.parent

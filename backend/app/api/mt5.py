@@ -1,14 +1,15 @@
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional, Dict, Any
+
 from app.services.mt5_service import MT5Service
 
 router = APIRouter(prefix="/mt5", tags=["mt5"])
 
 class ConnectRequest(BaseModel):
-    login: Optional[int] = None
-    password: Optional[str] = None
-    server: Optional[str] = None
+    login: int | None = None
+    password: str | None = None
+    server: str | None = None
 
 @router.post("/connect")
 def connect_mt5(request: ConnectRequest):

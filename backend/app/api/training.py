@@ -1,12 +1,12 @@
-from typing import Any
-from fastapi import APIRouter, HTTPException, BackgroundTasks
-from pydantic import BaseModel
 import uuid
+from typing import Any
+
+from fastapi import APIRouter, BackgroundTasks, HTTPException
+from pydantic import BaseModel
 
 from app.core.logging import get_logger
 from app.ml.training.trainer import Trainer
 from app.services.dataset_service import DatasetService
-from app.core.exceptions import TrainingError
 
 log = get_logger(__name__)
 
@@ -26,26 +26,27 @@ def run_training_job(job_id: str, request: StartTrainingRequest):
     """Background task for training."""
     try:
         _active_jobs[job_id]["status"] = "training"
-        
+
         # Load dataset
         dataset_meta = DatasetService.get_dataset(request.dataset_id)
-        from app.config import settings
         import pandas as pd
-        
+
+        from app.config import settings
+
         df = pd.read_parquet(settings.resolve_path("data") / dataset_meta["file_path"])
-        
+
         trainer = Trainer(
             experiment_id=request.experiment_id,
             df=df,
             agent_type=request.agent_type,
             hyperparams=request.hyperparameters
         )
-        
+
         run_id = trainer.train(total_timesteps=request.total_timesteps)
-        
+
         _active_jobs[job_id]["status"] = "completed"
         _active_jobs[job_id]["run_id"] = run_id
-        
+
     except Exception as e:
         log.error("Training job failed", job_id=job_id, error=str(e))
         _active_jobs[job_id]["status"] = "failed"
@@ -60,7 +61,7 @@ async def start_training(request: StartTrainingRequest, background_tasks: Backgr
         "experiment_id": request.experiment_id,
         "status": "queued"
     }
-    
+
     background_tasks.add_task(run_training_job, job_id, request)
     return {"success": True, "data": {"job_id": job_id}, "error": None}
 

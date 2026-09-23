@@ -1,4 +1,5 @@
 from typing import Any
+
 from fastapi import APIRouter
 
 from app.services.feature_service import FeatureService

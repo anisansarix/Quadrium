@@ -1,7 +1,6 @@
-import pandas as pd
-import pandas_ta as ta
 
-from typing import List, Set
+import pandas as pd
+
 from app.core.exceptions import DataError
 from app.core.logging import get_logger
 
@@ -19,14 +18,14 @@ class FeatureService:
     }
 
     @classmethod
-    def apply_features(cls, df: pd.DataFrame, features: List[str]) -> pd.DataFrame:
+    def apply_features(cls, df: pd.DataFrame, features: list[str]) -> pd.DataFrame:
         """
         Apply requested features to the dataframe.
         Expects columns: Open, High, Low, Close, Volume (or lowercase versions).
         """
         if df.empty:
             raise DataError("Cannot apply features to an empty DataFrame.")
-            
+
         # Ensure column names are standardized for pandas-ta
         # (pandas-ta expects lowercase or uppercase, but standardizing helps)
         # We will map standard names if they exist
@@ -34,9 +33,9 @@ class FeatureService:
         for col in df.columns:
             if col.lower() in ["open", "high", "low", "close", "volume", "tick_volume"]:
                 rename_map[col] = col.capitalize()
-        
+
         df_working = df.rename(columns=rename_map).copy()
-        
+
         # Verify required columns exist
         required_cols = {"Open", "High", "Low", "Close"}
         missing = required_cols - set(df_working.columns)
@@ -49,7 +48,7 @@ class FeatureService:
             if f_lower not in cls.AVAILABLE_FEATURES:
                 log.warning("Unknown feature requested", feature=feature)
                 continue
-                
+
             try:
                 # Apply features using pandas-ta
                 if f_lower == "rsi":
@@ -85,10 +84,10 @@ class FeatureService:
 
         # Drop NaN values introduced by rolling windows
         df_working.dropna(inplace=True)
-        
+
         # Reset index if needed, though typically we want to preserve it
         return df_working
 
     @classmethod
-    def get_available_features(cls) -> List[str]:
+    def get_available_features(cls) -> list[str]:
         return sorted(list(cls.AVAILABLE_FEATURES))

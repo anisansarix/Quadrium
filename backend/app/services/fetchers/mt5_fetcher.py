@@ -1,15 +1,15 @@
 import asyncio
 from datetime import datetime
+
 import pandas as pd
-import pytz
 
 try:
     import MetaTrader5 as mt5
 except ImportError:
     mt5 = None
 
-from app.services.fetchers.base import DataFetcher
 from app.core.exceptions import DataError
+from app.services.fetchers.base import DataFetcher
 
 
 class MT5Fetcher(DataFetcher):
@@ -21,7 +21,7 @@ class MT5Fetcher(DataFetcher):
     def __init__(self) -> None:
         if mt5 is None:
             raise RuntimeError("MetaTrader5 library is not installed or not supported on this OS.")
-        
+
         self.TIMEFRAME_MAP = {
             "M1": mt5.TIMEFRAME_M1,
             "M5": mt5.TIMEFRAME_M5,
@@ -46,7 +46,7 @@ class MT5Fetcher(DataFetcher):
             raise ValueError(f"Timeframe '{timeframe}' is not supported by MT5Fetcher.")
 
         loop = asyncio.get_running_loop()
-        
+
         # MT5 calls must be executed in a thread pool to avoid blocking the asyncio event loop
         def _fetch() -> pd.DataFrame:
             assert mt5 is not None
@@ -60,22 +60,22 @@ class MT5Fetcher(DataFetcher):
                 raise DataError(f"No data returned for {symbol}. MT5 error code: {error}")
 
             df = pd.DataFrame(rates)
-            
+
             # MT5 returns time as unix timestamps
             df['time'] = pd.to_datetime(df['time'], unit='s')
-            
+
             # Keep necessary columns
             df = df.rename(columns={'real_volume': 'real_volume'})  # It's already real_volume in MT5
-            
+
             expected_cols = ["time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
             df = df[expected_cols]
-            
-            # MT5 times are in broker's timezone. 
+
+            # MT5 times are in broker's timezone.
             # We standardize to UTC. If broker is UTC+2/3, we should ideally shift it,
             # but for simplicity we treat it as UTC localized if not otherwise known,
             # or tz-naive. We will localize it to UTC to match standard interface.
             df['time'] = df['time'].dt.tz_localize('UTC')
-            
+
             return df
 
         try:

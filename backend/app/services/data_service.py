@@ -4,15 +4,13 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pandas as pd
-
 from app.config import settings
 from app.core.database import get_duckdb
 from app.core.exceptions import DataError
+from app.core.logging import get_logger
 from app.services.fetchers.base import DataFetcher
 from app.services.fetchers.mt5_fetcher import MT5Fetcher
 from app.services.fetchers.yfinance_fetcher import YFinanceFetcher
-from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
@@ -67,8 +65,8 @@ class DataService:
         # Format: YYYYMMDD_YYYYMMDD.parquet
         start_str = start.strftime("%Y%m%d")
         end_str = end.strftime("%Y%m%d")
-        
-        # Use UUID to prevent overwriting if we fetch exact same range multiple times, 
+
+        # Use UUID to prevent overwriting if we fetch exact same range multiple times,
         # or we could overwrite. Let's use a unique name.
         catalog_id = str(uuid.uuid4())
         filename = f"{start_str}_{end_str}_{catalog_id[:8]}.parquet"
@@ -111,7 +109,7 @@ class DataService:
                 source.lower()
             ]
         )
-        
+
         log.info("Data cataloged successfully", catalog_id=catalog_id, rows=row_count)
         return catalog_id
 
@@ -124,9 +122,9 @@ class DataService:
         if instrument:
             query += " WHERE instrument = ?"
             params.append(instrument.upper())
-            
+
         query += " ORDER BY fetched_at DESC"
-        
+
         # Convert to dictionary
         df = conn.execute(query, params).df()
         return df.to_dict(orient="records")

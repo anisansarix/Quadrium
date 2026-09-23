@@ -1,11 +1,11 @@
-from typing import Any, List
+from typing import Any
+
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
 
 from app.core.exceptions import DataError
-from app.services.dataset_service import DatasetService
-from app.services.feature_service import FeatureService
 from app.core.logging import get_logger
+from app.services.dataset_service import DatasetService
 
 log = get_logger(__name__)
 
@@ -14,7 +14,7 @@ router = APIRouter(prefix="/datasets")
 class CreateDatasetRequest(BaseModel):
     raw_data_id: str
     version: str
-    features: List[str]
+    features: list[str]
 
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_dataset(request: CreateDatasetRequest) -> dict[str, Any]:

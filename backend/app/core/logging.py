@@ -68,6 +68,7 @@ def setup_logging() -> None:
 
 from typing import Any
 
+
 def get_logger(name: str | None = None) -> Any:
     """Get a structured logger instance."""
     return structlog.get_logger(name)

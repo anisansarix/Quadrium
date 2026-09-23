@@ -1,10 +1,11 @@
 from typing import Any
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from app.config import settings
-from app.services.prop_firm import PropFirmSimulator
 from app.core.logging import get_logger
+from app.services.prop_firm import PropFirmSimulator
 
 log = get_logger(__name__)
 
@@ -41,7 +42,7 @@ async def simulate(request: SimulateRequest) -> dict[str, Any]:
     """Run prop firm challenge simulation."""
     # Placeholder for actual trade fetch
     return {
-        "success": True, 
+        "success": True,
         "data": {
             "status": "in_progress",
             "detail": "Integration with backtest trades pending."

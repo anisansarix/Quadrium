@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from sqlalchemy import select
-from sqlalchemy.exc import NoResultFound
 
 from app.core.database import get_db_session
 from app.models.db import Experiment

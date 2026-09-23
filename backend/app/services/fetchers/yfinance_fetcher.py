@@ -1,10 +1,11 @@
 import asyncio
 from datetime import datetime
+
 import pandas as pd
 import yfinance as yf
 
-from app.services.fetchers.base import DataFetcher
 from app.core.exceptions import DataError
+from app.services.fetchers.base import DataFetcher
 
 
 class YFinanceFetcher(DataFetcher):
@@ -43,11 +44,11 @@ class YFinanceFetcher(DataFetcher):
 
         # Run the blocking yfinance call in a thread
         loop = asyncio.get_running_loop()
-        
+
         # Download data
         try:
             df = await loop.run_in_executor(
-                None, 
+                None,
                 lambda: yf.download(
                     tickers=symbol,
                     start=start,
@@ -85,12 +86,12 @@ class YFinanceFetcher(DataFetcher):
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = 0.0
-                
+
         df = df[expected_cols]
 
         # Reset index to make 'time' a column, or just name the index
         df.index.name = "time"
-        
+
         # Ensure UTC timezone
         if df.index.tz is None:
             df.index = df.index.tz_localize("UTC")

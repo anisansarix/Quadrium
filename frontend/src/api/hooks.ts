@@ -87,7 +87,7 @@ export const useTrainingJobs = () => {
   return useQuery({
     queryKey: ['training', 'jobs'],
     queryFn: async () => {
-      const { data } = await apiClient.get<ApiResponse<any[]>>('/training/jobs');
+      const { data } = await apiClient.get<ApiResponse<unknown[]>>('/training/jobs');
       return data.data || [];
     },
   });
@@ -105,11 +105,31 @@ export const useFetchData = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (payload: FetchDataPayload) => {
-      const { data } = await apiClient.post<ApiResponse<any>>('/data/fetch', payload);
+      const { data } = await apiClient.post<ApiResponse<unknown>>('/data/fetch', payload);
       return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['data', 'raw'] });
+    },
+  });
+};
+
+export interface StartTrainingPayload {
+  dataset_id: string;
+  experiment_id: string;
+  agent_type?: string;
+  total_timesteps?: number;
+}
+
+export const useStartTraining = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (payload: StartTrainingPayload) => {
+      const { data } = await apiClient.post<ApiResponse<{job_id: string}>>('/training/start', payload);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['training', 'jobs'] });
     },
   });
 };
