@@ -1,8 +1,55 @@
-﻿import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { useEffect, useRef } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { LineChart, Play } from "lucide-react"
+import { Play } from "lucide-react"
+import { createChart, ColorType } from "lightweight-charts"
 
 export function Backtest() {
+  const chartContainerRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!chartContainerRef.current) return
+
+    const chart = createChart(chartContainerRef.current, {
+      layout: {
+        background: { type: ColorType.Solid, color: 'transparent' },
+        textColor: '#888',
+      },
+      grid: {
+        vertLines: { color: '#333' },
+        horzLines: { color: '#333' },
+      },
+      width: chartContainerRef.current.clientWidth,
+      height: 350,
+    })
+
+    const lineSeries = chart.addLineSeries({ color: '#2962FF' })
+    
+    // Dummy data for now
+    lineSeries.setData([
+      { time: '2024-01-01', value: 10000 },
+      { time: '2024-01-02', value: 10050 },
+      { time: '2024-01-03', value: 9980 },
+      { time: '2024-01-04', value: 10120 },
+      { time: '2024-01-05', value: 10250 },
+      { time: '2024-01-06', value: 10200 },
+      { time: '2024-01-07', value: 10400 },
+    ])
+
+    const handleResize = () => {
+      if (chartContainerRef.current) {
+        chart.applyOptions({ width: chartContainerRef.current.clientWidth })
+      }
+    }
+
+    window.addEventListener('resize', handleResize)
+
+    return () => {
+      window.removeEventListener('resize', handleResize)
+      chart.remove()
+    }
+  }, [])
+
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
@@ -48,11 +95,8 @@ export function Backtest() {
               <CardTitle>Equity Curve</CardTitle>
               <CardDescription>Cumulative returns over time.</CardDescription>
             </CardHeader>
-            <CardContent className="h-[300px] flex items-center justify-center">
-              <div className="flex flex-col items-center text-muted-foreground">
-                <LineChart className="h-12 w-12 mb-4 opacity-50" />
-                <p>Run a backtest to view results.</p>
-              </div>
+            <CardContent>
+              <div ref={chartContainerRef} className="w-full" />
             </CardContent>
           </Card>
         </div>

@@ -68,3 +68,24 @@ async def get_job_status(job_id: str) -> dict[str, Any]:
     if job_id not in _active_backtests:
         raise HTTPException(status_code=404, detail="Job not found")
     return {"success": True, "data": _active_backtests[job_id], "error": None}
+
+from app.core.database import get_duckdb
+
+@router.get("/{backtest_id}/trades")
+def get_backtest_trades(backtest_id: str) -> dict[str, Any]:
+    """Get all trades generated in a backtest."""
+    conn = get_duckdb()
+    result = conn.execute("SELECT * FROM backtest_trades WHERE backtest_id = ?", [backtest_id]).fetchdf()
+    if not result.empty:
+        result['entry_time'] = result['entry_time'].astype(str)
+        result['exit_time'] = result['exit_time'].astype(str)
+    return {"success": True, "data": result.to_dict(orient="records"), "error": None}
+
+@router.get("/{backtest_id}/metrics")
+def get_backtest_metrics(backtest_id: str) -> dict[str, Any]:
+    """Get aggregated metrics for a backtest."""
+    conn = get_duckdb()
+    result = conn.execute("SELECT * FROM backtest_metrics WHERE backtest_id = ?", [backtest_id]).fetchdf()
+    if result.empty:
+        raise HTTPException(status_code=404, detail="Metrics not found")
+    return {"success": True, "data": result.to_dict(orient="records")[0], "error": None}

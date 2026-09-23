@@ -1,0 +1,16 @@
+//@version=5
+strategy("Strategy {{ experiment_id }}", overlay=true)
+
+fastLength = input.int({{ fast_ma }}, title="Fast MA Length")
+slowLength = input.int({{ slow_ma }}, title="Slow MA Length")
+
+fastMA = ta.sma(close, fastLength)
+slowMA = ta.sma(close, slowLength)
+
+longCondition = ta.crossover(fastMA, slowMA)
+if (longCondition)
+    strategy.entry("Long", strategy.long)
+
+shortCondition = ta.crossunder(fastMA, slowMA)
+if (shortCondition)
+    strategy.entry("Short", strategy.short)

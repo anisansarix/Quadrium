@@ -1,8 +1,17 @@
-﻿import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { PlaySquare } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+
+const mockData = [
+  { epoch: 10, loss: 0.5 },
+  { epoch: 20, loss: 0.4 },
+  { epoch: 30, loss: 0.25 },
+  { epoch: 40, loss: 0.155 },
+  { epoch: 42, loss: 0.142 }
+]
 
 export function Training() {
   return (
@@ -43,6 +52,17 @@ export function Training() {
                 <p className="text-2xl font-bold text-primary">+2.45</p>
               </div>
             </div>
+
+            <div className="h-48 mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart data={mockData}>
+                  <XAxis dataKey="epoch" />
+                  <YAxis domain={['auto', 'auto']} />
+                  <Tooltip />
+                  <Line type="monotone" dataKey="loss" stroke="#ef4444" strokeWidth={2} dot={false} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
           </CardContent>
         </Card>
 
@@ -52,7 +72,7 @@ export function Training() {
             <CardDescription>Real-time output from trainer.</CardDescription>
           </CardHeader>
           <CardContent>
-            <ScrollArea className="h-[200px] w-full rounded-md border bg-muted p-4">
+            <ScrollArea className="h-[400px] w-full rounded-md border bg-muted p-4">
               <pre className="text-xs font-mono text-muted-foreground">
 {`[2026-09-23 11:42:01] Starting epoch 40
 [2026-09-23 11:42:05] Batch loss: 0.155

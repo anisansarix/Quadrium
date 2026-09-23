@@ -16,6 +16,9 @@ from app.api.backtest import router as backtest_router
 
 api_router = APIRouter(prefix="/api")
 
+from app.api.mt5 import router as mt5_router
+from app.api.strategies import router as strategies_router
+
 # Register sub-routers
 api_router.include_router(system_router, tags=["System"])
 api_router.include_router(experiments_router, tags=["Experiments"])
@@ -26,8 +29,5 @@ api_router.include_router(training_router, tags=["Training"])
 api_router.include_router(risk_router, tags=["Risk"])
 api_router.include_router(prop_firm_router, tags=["Prop Firm"])
 api_router.include_router(backtest_router, tags=["Backtesting"])
-
-# Future routers (uncomment as implemented):
-# api_router.include_router(mt5_router, tags=["MT5"])
-# api_router.include_router(strategies_router, tags=["Strategies"])
-# api_router.include_router(config_router, tags=["Configuration"])
+api_router.include_router(mt5_router, tags=["MT5"])
+api_router.include_router(strategies_router, tags=["Strategies"])
