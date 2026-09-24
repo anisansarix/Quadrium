@@ -1,6 +1,5 @@
 import tomllib
 from dataclasses import dataclass, field
-from decimal import Decimal
 from pathlib import Path
 
 import numpy as np
@@ -14,23 +13,23 @@ log = get_logger(__name__)
 @dataclass
 class ConsistencyRule:
     rule_type: ConsistencyType
-    threshold_pct: Decimal
+    threshold_pct: float
     calculation_base: str = "total_profit"
 
 @dataclass
 class ChallengePhase:
     name: str
-    profit_target_pct: Decimal
+    profit_target_pct: float
     min_trading_days: int
     max_calendar_days: int | None = None
 
 @dataclass
 class PropFirmProfile:
     name: str
-    account_size: Decimal
-    max_overall_drawdown_pct: Decimal
+    account_size: float
+    max_overall_drawdown_pct: float
     drawdown_type: DrawdownType
-    max_daily_loss_pct: Decimal
+    max_daily_loss_pct: float
     daily_loss_includes_floating: bool
     daily_reset_timezone: str
     phases: list[ChallengePhase] = field(default_factory=list)
@@ -61,7 +60,7 @@ class PropFirmSimulator:
                 phases = [
                     ChallengePhase(
                         name=p.get("name", "Phase"),
-                        profit_target_pct=Decimal(str(p.get("profit_target_pct", 0))),
+                        profit_target_pct=float(p.get("profit_target_pct", 0)),
                         min_trading_days=int(p.get("min_trading_days", 0)),
                         max_calendar_days=int(p.get("max_calendar_days")) if p.get("max_calendar_days") else None
                     )
@@ -71,7 +70,7 @@ class PropFirmSimulator:
                 consistency = [
                     ConsistencyRule(
                         rule_type=ConsistencyType(c.get("rule_type")),
-                        threshold_pct=Decimal(str(c.get("threshold_pct", 0))),
+                        threshold_pct=float(c.get("threshold_pct", 0)),
                         calculation_base=c.get("calculation_base", "total_profit")
                     )
                     for c in consistency_data
@@ -79,14 +78,14 @@ class PropFirmSimulator:
 
                 # We pick the first account size as default, or allow dynamic selection later
                 account_sizes = profile_data.get("account_sizes", [100000])
-                account_size = Decimal(str(account_sizes[0]))
+                account_size = float(account_sizes[0])
 
                 profile = PropFirmProfile(
                     name=profile_data.get("name", "Unknown Profile"),
                     account_size=account_size,
-                    max_overall_drawdown_pct=Decimal(str(rules_data.get("max_overall_drawdown_pct", 0.1))),
+                    max_overall_drawdown_pct=float(rules_data.get("max_overall_drawdown_pct", 0.1)),
                     drawdown_type=DrawdownType(rules_data.get("drawdown_type", "static")),
-                    max_daily_loss_pct=Decimal(str(rules_data.get("max_daily_loss_pct", 0.05))),
+                    max_daily_loss_pct=float(rules_data.get("max_daily_loss_pct", 0.05)),
                     daily_loss_includes_floating=bool(rules_data.get("daily_loss_includes_floating", True)),
                     daily_reset_timezone=rules_data.get("daily_reset_timezone", "UTC"),
                     phases=phases,
@@ -103,7 +102,7 @@ class PropFirmSimulator:
         cls,
         profile: PropFirmProfile,
         trades: list[Trade],
-        initial_balance: Decimal,
+        initial_balance: float,
         equity_curve: np.ndarray
     ) -> dict:
         """
@@ -121,26 +120,26 @@ class PropFirmSimulator:
             # Static DD relative to initial balance
             # For strict static DD: equity drops below initial_balance * (1 - max_overall_drawdown_pct)
             # Find min equity
-            min_eq = min(equity_curve) if len(equity_curve) > 0 else float(initial_balance)
-            max_drop = float(initial_balance) - min_eq
-            dd_pct = max_drop / float(initial_balance)
+            min_eq = min(equity_curve) if len(equity_curve) > 0 else initial_balance
+            max_drop = initial_balance - min_eq
+            dd_pct = max_drop / initial_balance
             from app.services.risk_engine import DrawdownResult
-            dd = DrawdownResult(max_drawdown_abs=Decimal(str(max_drop)), max_drawdown_pct=Decimal(str(dd_pct)))
+            dd = DrawdownResult(max_drawdown_abs=max_drop, max_drawdown_pct=dd_pct)
 
-        if float(dd.max_drawdown_pct) > float(profile.max_overall_drawdown_pct):
+        if dd.max_drawdown_pct > profile.max_overall_drawdown_pct:
             return cls._result_payload(
                 ChallengeResult.FAILED,
-                f"Overall Drawdown breach: {float(dd.max_drawdown_pct):.2%} > {float(profile.max_overall_drawdown_pct):.2%}"
+                f"Overall Drawdown breach: {dd.max_drawdown_pct:.2%} > {profile.max_overall_drawdown_pct:.2%}"
             )
 
         # 2. Daily Loss Check
         daily_losses = RiskEngine.daily_loss(trades, initial_balance, profile.daily_reset_timezone, profile.daily_loss_includes_floating)
-        max_daily_loss_pct = max((float(dl.max_loss_pct) for dl in daily_losses), default=0.0)
+        max_daily_loss_pct = max((dl.max_loss_pct for dl in daily_losses), default=0.0)
 
-        if max_daily_loss_pct > float(profile.max_daily_loss_pct):
+        if max_daily_loss_pct > profile.max_daily_loss_pct:
             return cls._result_payload(
                 ChallengeResult.FAILED,
-                f"Daily Loss breach: {max_daily_loss_pct:.2%} > {float(profile.max_daily_loss_pct):.2%}"
+                f"Daily Loss breach: {max_daily_loss_pct:.2%} > {profile.max_daily_loss_pct:.2%}"
             )
 
         # 3. Phase / Profit Target Check
@@ -165,9 +164,9 @@ class PropFirmSimulator:
             for rule in profile.consistency_rules:
                 if rule.rule_type == ConsistencyType.MAX_DAY_SHARE:
                     daily_pnl = RiskEngine.daily_pnl(trades, profile.daily_reset_timezone)
-                    cons_res = RiskEngine.consistency_score(daily_pnl, rule.threshold_pct)
+                    cons_res = RiskEngine.consistency_score(trades, daily_pnl, rule.threshold_pct)
                     if not cons_res.passed:
-                        return cls._result_payload(ChallengeResult.FAILED, f"Consistency breach: Max day share {float(cons_res.max_day_share):.2%} > {float(rule.threshold_pct):.2%}")
+                        return cls._result_payload(ChallengeResult.FAILED, f"Consistency breach: Max day share {cons_res.max_day_share:.2%} > {rule.threshold_pct:.2%}")
 
         return cls._result_payload(ChallengeResult.PASSED, "All requirements met")
 

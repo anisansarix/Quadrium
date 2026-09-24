@@ -1,6 +1,5 @@
 import uuid
 from datetime import datetime
-from decimal import Decimal
 
 import numpy as np
 import pandas as pd
@@ -101,10 +100,10 @@ class BacktestEngine:
                     direction=direction,
                     entry_time=current_entry_time,
                     exit_time=dt,
-                    entry_price=Decimal(str(current_entry_price)),
-                    exit_price=Decimal(str(current_price)),
-                    lot_size=Decimal(str(abs(current_position))),
-                    pnl=Decimal(str(pnl))
+                    entry_price=current_entry_price,
+                    exit_price=current_price,
+                    lot_size=abs(current_position),
+                    pnl=pnl
                 )
                 self.trades.append(trade)
 
@@ -123,10 +122,10 @@ class BacktestEngine:
                         direction=old_dir,
                         entry_time=current_entry_time,
                         exit_time=dt,
-                        entry_price=Decimal(str(current_entry_price)),
-                        exit_price=Decimal(str(current_price)),
-                        lot_size=Decimal(str(abs(current_position))),
-                        pnl=Decimal(str(pnl))
+                        entry_price=current_entry_price,
+                        exit_price=current_price,
+                        lot_size=abs(current_position),
+                        pnl=pnl
                     )
                     self.trades.append(trade)
                     # Open new

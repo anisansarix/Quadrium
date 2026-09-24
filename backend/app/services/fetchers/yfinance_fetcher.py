@@ -20,7 +20,7 @@ class YFinanceFetcher(DataFetcher):
         "M15": "15m",
         "M30": "30m",
         "H1": "1h",
-        # Yfinance doesn't natively support 4h. It has 1h, 1d.
+        "H4": "1h",  # We will resample 1h to 4h
         "D1": "1d",
         "W1": "1wk",
         "MN1": "1mo",
@@ -97,6 +97,18 @@ class YFinanceFetcher(DataFetcher):
             df.index = df.index.tz_localize("UTC")
         else:
             df.index = df.index.tz_convert("UTC")
+
+        # Resample H1 to H4 if requested
+        if timeframe.upper() == "H4":
+            df = df.resample("4h").agg({
+                "open": "first",
+                "high": "max",
+                "low": "min",
+                "close": "last",
+                "tick_volume": "sum",
+                "spread": "mean",
+                "real_volume": "sum"
+            }).dropna()
 
         # Convert index back to column for consistency if needed, but keeping it as DatetimeIndex is fine for pandas
         df = df.reset_index()

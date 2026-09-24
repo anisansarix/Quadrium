@@ -2,24 +2,15 @@
 
 from __future__ import annotations
 
-import tomllib
 from pathlib import Path
 from typing import Any
 
-from pydantic import Field
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Resolve project root (two levels up from this file: backend/app/config.py → project root)
 _BACKEND_DIR = Path(__file__).resolve().parent.parent
 _PROJECT_ROOT = _BACKEND_DIR.parent
-
-
-def _load_toml(path: Path) -> dict[str, Any]:
-    """Load a TOML file and return its contents as a dict."""
-    if not path.exists():
-        return {}
-    with open(path, "rb") as f:
-        return tomllib.load(f)
 
 
 class APISettings(BaseSettings):
@@ -75,8 +66,8 @@ class MT5Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="MT5_")
 
     enabled: bool = False
-    login: str = ""
-    password: str = ""
+    login: SecretStr = Field(default_factory=lambda: SecretStr(""))
+    password: SecretStr = Field(default_factory=lambda: SecretStr(""))
     server: str = ""
     path: str = r"C:\Program Files\MetaTrader 5\terminal64.exe"
     account_type: str = "demo"
@@ -92,6 +83,7 @@ class Settings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_prefix="QUADRIUM_",
+        env_nested_delimiter="__",
         env_file=str(_PROJECT_ROOT / ".env"),
         env_file_encoding="utf-8",
         extra="ignore",
@@ -129,10 +121,6 @@ class Settings(BaseSettings):
 
 def load_settings() -> Settings:
     """Load and return application settings."""
-    # Load TOML defaults first (future: merge TOML values into Settings)
-    config_path = _PROJECT_ROOT / "config" / "default.toml"
-    _toml_defaults = _load_toml(config_path)
-
     # Pydantic settings reads from env vars and .env file
     return Settings()
 

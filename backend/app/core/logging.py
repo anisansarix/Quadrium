@@ -52,11 +52,23 @@ def setup_logging() -> None:
         ],
     )
 
+    file_renderer = structlog.dev.ConsoleRenderer(colors=False) if settings.env == "development" else structlog.processors.JSONRenderer()
+    file_formatter = structlog.stdlib.ProcessorFormatter(
+        processors=[
+            structlog.stdlib.ProcessorFormatter.remove_processors_meta,
+            file_renderer,
+        ],
+    )
+
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
+    
+    file_handler = logging.FileHandler("quadrium.log")
+    file_handler.setFormatter(file_formatter)
 
     root_logger = logging.getLogger()
     root_logger.addHandler(handler)
+    root_logger.addHandler(file_handler)
     root_logger.setLevel(log_level)
 
     # Quiet noisy libraries

@@ -36,6 +36,12 @@ class DataService:
         Returns:
             The catalog entry ID.
         """
+        import re
+        if not re.match(r"^[A-Za-z0-9._=-]{1,20}$", symbol):
+            raise ValueError(f"Invalid symbol format: {symbol}")
+        if not re.match(r"^[A-Za-z0-9._-]{1,20}$", timeframe):
+            raise ValueError(f"Invalid timeframe format: {timeframe}")
+
         log.info("Starting data fetch", symbol=symbol, timeframe=timeframe, source=source)
 
         # 1. Instantiate the fetcher

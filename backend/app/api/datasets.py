@@ -16,8 +16,10 @@ class CreateDatasetRequest(BaseModel):
     version: str
     features: list[str]
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-async def create_dataset(request: CreateDatasetRequest) -> dict[str, Any]:
+from app.models.schemas import APIResponse
+
+@router.post("", status_code=status.HTTP_201_CREATED, response_model=APIResponse)
+async def create_dataset(request: CreateDatasetRequest) -> Any:
     """Create a new processed dataset from a raw dataset by applying features."""
     try:
         dataset_id = DatasetService.create_dataset(
@@ -25,7 +27,7 @@ async def create_dataset(request: CreateDatasetRequest) -> dict[str, Any]:
             version=request.version,
             features=request.features
         )
-        return {"success": True, "data": {"dataset_id": dataset_id}, "error": None}
+        return APIResponse(data={"dataset_id": dataset_id})
     except DataError as e:
         log.warning("Dataset creation failed", error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
@@ -33,22 +35,22 @@ async def create_dataset(request: CreateDatasetRequest) -> dict[str, Any]:
         log.error("Internal error during dataset creation", error=str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("")
-async def list_datasets(instrument: str | None = None) -> dict[str, Any]:
+@router.get("", response_model=APIResponse)
+async def list_datasets(instrument: str | None = None) -> Any:
     """List all processed datasets."""
     try:
         datasets = DatasetService.list_datasets(instrument=instrument)
-        return {"success": True, "data": datasets, "error": None}
+        return APIResponse(data=datasets)
     except Exception as e:
         log.error("Failed to list datasets", error=str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@router.get("/{dataset_id}")
-async def get_dataset(dataset_id: str) -> dict[str, Any]:
+@router.get("/{dataset_id}", response_model=APIResponse)
+async def get_dataset(dataset_id: str) -> Any:
     """Get metadata for a specific dataset."""
     try:
         dataset = DatasetService.get_dataset(dataset_id)
-        return {"success": True, "data": dataset, "error": None}
+        return APIResponse(data=dataset)
     except DataError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

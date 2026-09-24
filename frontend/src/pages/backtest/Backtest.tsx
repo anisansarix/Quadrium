@@ -23,6 +23,7 @@ export function Backtest() {
       height: 350,
     })
 
+    // @ts-ignore - lightweight-charts typing
     const lineSeries = chart.addLineSeries({ color: '#2962FF' })
     
     // Dummy data for now

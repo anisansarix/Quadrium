@@ -1,0 +1,20 @@
+# Custom Demo Profile
+# $25k Demo with 4% daily loss, 12% max loss
+
+[profile]
+name = "Custom Demo 25k"
+account_sizes = [25000]
+
+[rules]
+max_overall_drawdown_pct = 0.12
+drawdown_type = "static"
+max_daily_loss_pct = 0.04
+daily_loss_includes_floating = true
+daily_reset_timezone = "Europe/Prague"
+
+[[phases]]
+name = "Phase 1 (Challenge)"
+profit_target_pct = 0.10
+min_trading_days = 1
+max_calendar_days = 30
+

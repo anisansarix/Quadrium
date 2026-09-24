@@ -66,9 +66,9 @@ class Trainer:
             mlflow.log_params(self.hyperparams)
             mlflow.log_param("total_timesteps", total_timesteps)
 
-            # Use mixed precision context if supported (handled by SB3 somewhat, or we can use AMP in env/models if we dig deeper)
-            # For RTX 3050 4GB, PyTorch autocast is very helpful
-            with torch.amp.autocast("cuda"):
+            # Use mixed precision context if supported
+            device_type = "cuda" if torch.cuda.is_available() else "cpu"
+            with torch.autocast(device_type=device_type, enabled=torch.cuda.is_available()):
                 callback = MLflowLoggingCallback()
                 agent.learn(total_timesteps=total_timesteps, callback=callback)
 

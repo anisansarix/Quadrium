@@ -1,5 +1,5 @@
-
 import pandas as pd
+import pandas_ta as ta
 
 from app.core.exceptions import DataError
 from app.core.logging import get_logger

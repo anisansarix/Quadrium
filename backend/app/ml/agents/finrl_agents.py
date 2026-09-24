@@ -109,4 +109,4 @@ class AgentFactory:
         elif agent_type == "ddpg":
             return DDPG.load(path, env=env)
 
-        raise AppError(f"Unsupported agent type: {agent_type}")
+        raise TrainingError(f"Unsupported agent type: {agent_type}")

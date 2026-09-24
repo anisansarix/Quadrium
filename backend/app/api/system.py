@@ -88,3 +88,20 @@ async def gpu_status() -> APIResponse[GPUStatus]:
             data=GPUStatus(cuda_available=False),
             error="PyTorch not installed",
         )
+
+import os
+
+@router.get("/logs", response_model=APIResponse[list[str]])
+async def get_system_logs() -> APIResponse[list[str]]:
+    """Get recent system logs."""
+    log_file = "quadrium.log"
+    if not os.path.exists(log_file):
+        return APIResponse(data=[])
+        
+    try:
+        with open(log_file, "r") as f:
+            lines = f.readlines()
+            # Return last 50 lines
+            return APIResponse(data=lines[-50:])
+    except Exception as e:
+        return APIResponse(data=[], error=str(e))

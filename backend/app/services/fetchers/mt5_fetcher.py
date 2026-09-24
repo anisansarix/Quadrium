@@ -47,7 +47,10 @@ class MT5Fetcher(DataFetcher):
 
         loop = asyncio.get_running_loop()
 
+        from app.services.mt5_service import with_resilience
+
         # MT5 calls must be executed in a thread pool to avoid blocking the asyncio event loop
+        @with_resilience
         def _fetch() -> pd.DataFrame:
             assert mt5 is not None
             if not mt5.initialize():

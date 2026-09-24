@@ -5,8 +5,11 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from app.core.exceptions import DataError
+from app.core.logging import get_logger
 from app.models.schemas import APIResponse
 from app.services.data_service import DataService
+
+log = get_logger(__name__)
 
 router = APIRouter(prefix="/data", tags=["data"])
 
@@ -38,7 +41,8 @@ async def fetch_historical_data(request: FetchDataRequest) -> Any:
     except DataError as e:
         raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        log.error("Internal error during fetch", error=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @router.get("/raw", response_model=APIResponse)
@@ -50,4 +54,5 @@ def list_raw_data(instrument: str | None = Query(None, description="Filter by in
         data = DataService.list_raw_data(instrument=instrument)
         return APIResponse(data=data)
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+        log.error("Internal error listing data", error=str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")

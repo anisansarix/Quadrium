@@ -11,8 +11,10 @@ log = get_logger(__name__)
 
 router = APIRouter(prefix="/prop-firm")
 
-@router.get("/profiles")
-async def list_profiles() -> dict[str, Any]:
+from app.models.schemas import APIResponse
+
+@router.get("/profiles", response_model=APIResponse)
+async def list_profiles() -> Any:
     """List available prop firm profiles."""
     try:
         profiles_dir = settings.resolve_path("config/prop_firms")
@@ -27,7 +29,7 @@ async def list_profiles() -> dict[str, Any]:
                 "max_overall_drawdown_pct": float(p.max_overall_drawdown_pct),
                 "max_daily_loss_pct": float(p.max_daily_loss_pct)
             })
-        return {"success": True, "data": profiles_list, "error": None}
+        return APIResponse(data=profiles_list)
     except Exception as e:
         log.error("Failed to list profiles", error=str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
@@ -37,15 +39,7 @@ class SimulateRequest(BaseModel):
     experiment_id: str
     # In a real system, we fetch trades and equity from DB using experiment_id
 
-@router.post("/simulate")
-async def simulate(request: SimulateRequest) -> dict[str, Any]:
+@router.post("/simulate", response_model=APIResponse)
+async def simulate(request: SimulateRequest) -> Any:
     """Run prop firm challenge simulation."""
-    # Placeholder for actual trade fetch
-    return {
-        "success": True,
-        "data": {
-            "status": "in_progress",
-            "detail": "Integration with backtest trades pending."
-        },
-        "error": None
-    }
+    raise HTTPException(status_code=501, detail="Integration with backtest trades pending.")

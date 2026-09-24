@@ -1,6 +1,6 @@
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, SecretStr
 
 from app.services.mt5_service import MT5Service
 
@@ -8,15 +8,17 @@ router = APIRouter(prefix="/mt5", tags=["mt5"])
 
 class ConnectRequest(BaseModel):
     login: int | None = None
-    password: str | None = None
+    password: SecretStr | None = None
     server: str | None = None
 
 @router.post("/connect")
 def connect_mt5(request: ConnectRequest):
-    success = MT5Service.connect(request.login, request.password, request.server)
-    if not success:
-        raise HTTPException(status_code=400, detail="Failed to connect to MT5")
-    return {"message": "Connected successfully"}
+    pwd = request.password.get_secret_value() if request.password else None
+    try:
+        MT5Service.connect(request.login, pwd, request.server)
+        return {"message": "Connected successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to connect to MT5: {str(e)}")
 
 @router.post("/disconnect")
 def disconnect_mt5():
@@ -25,7 +27,8 @@ def disconnect_mt5():
 
 @router.get("/account")
 def get_account_info():
-    info = MT5Service.get_account_info()
-    if info is None:
-        raise HTTPException(status_code=400, detail="Failed to get account info")
-    return info
+    try:
+        info = MT5Service.get_account_info()
+        return info
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to get account info: {str(e)}")
