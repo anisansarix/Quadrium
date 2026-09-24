@@ -53,6 +53,9 @@ class LiveTradingEngine:
         
     @classmethod
     async def _run_loop(cls, session_id: str, experiment_id: str, symbol: str, timeframe: str, config: dict):
+        # Force symbol to uppercase for MT5
+        symbol = symbol.upper()
+        
         try:
             log.info(f"Session {session_id} booting up model {experiment_id}")
             
@@ -80,7 +83,7 @@ class LiveTradingEngine:
             
             while True:
                 def _fetch_state():
-                    if not mt5.initialize(): return None, None, None
+                    if not mt5.initialize(): return None, None
                     acc = mt5.account_info()
                     rates = mt5.copy_rates_from_pos(symbol, tf_id, 0, 1)
                     return acc, rates

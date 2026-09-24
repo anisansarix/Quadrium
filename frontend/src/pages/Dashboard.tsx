@@ -24,6 +24,7 @@ import {
   Activity,
   AlertCircle,
   Shield,
+  BrainCircuit,
 } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
@@ -128,6 +129,16 @@ export default function Dashboard() {
   const activeSessionId =
     liveSessions?.find((s) => s.status === "running" || s.status === "active")
       ?.id || "default";
+  
+  const activeSession = liveSessions?.find((s) => s.id === activeSessionId && s.id !== "default");
+  const prediction = activeSession?.config?.latest_prediction || 0;
+  const predictionPercent = ((prediction + 1) / 2) * 100;
+  
+  let agentAction = "NEUTRAL (HOLD)";
+  let actionColor = "text-zinc-400";
+  if (prediction > 0.5) { agentAction = "BUY (LONG)"; actionColor = "text-green-500"; }
+  else if (prediction < -0.5) { agentAction = "SELL (SHORT)"; actionColor = "text-red-500"; }
+
   const { data: positions } = useMt5Positions(activeSessionId);
 
   const [experimentId, setExperimentId] = useState("");
@@ -718,31 +729,80 @@ export default function Dashboard() {
         </Card>
       </div>
 
-      <Card className="bg-[#09090b] border-border/50 rounded-md overflow-hidden relative mt-3">
-        <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-50"></div>
-        <CardHeader className="pb-2 pt-3 px-4 border-b border-white/5 bg-white/[0.02]">
-          <CardTitle className="text-[11px] font-mono text-zinc-400 flex items-center gap-2 uppercase tracking-widest">
-            <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div>
-            System Logs
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="p-4 font-mono text-[11px] h-[160px] overflow-y-auto">
-          <div className="space-y-1 text-zinc-400">
-            {systemLogs?.length ? systemLogs.map((logStr, i) => {
-              return (
-                <div key={i} className="flex gap-3 whitespace-nowrap overflow-hidden text-ellipsis hover:text-zinc-300">
-                  <span className="text-zinc-500">{logStr}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mt-3">
+        <Card className="bg-[#09090b] border-border/50 rounded-md overflow-hidden relative lg:col-span-3">
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-50"></div>
+          <CardHeader className="pb-2 pt-3 px-4 border-b border-white/5 bg-white/[0.02]">
+            <CardTitle className="text-[11px] font-mono text-zinc-400 flex items-center gap-2 uppercase tracking-widest">
+              <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div>
+              System Logs
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 font-mono text-[11px] h-[160px] overflow-y-auto">
+            <div className="space-y-1 text-zinc-400">
+              {systemLogs?.length ? systemLogs.map((logStr, i) => {
+                return (
+                  <div key={i} className="flex gap-3 whitespace-nowrap overflow-hidden text-ellipsis hover:text-zinc-300">
+                    <span className="text-zinc-500">{logStr}</span>
+                  </div>
+                );
+              }) : (
+                <div className="flex gap-3">
+                  <span className="text-zinc-500 w-12 shrink-0">WAIT</span>
+                  <span className="text-zinc-500">Waiting for logs...</span>
                 </div>
-              );
-            }) : (
-              <div className="flex gap-3">
-                <span className="text-zinc-500 w-12 shrink-0">WAIT</span>
-                <span className="text-zinc-500">Waiting for logs...</span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-[#09090b] border-border/50 rounded-md overflow-hidden relative lg:col-span-1 flex flex-col">
+          <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-blue-500/50 to-transparent opacity-50"></div>
+          <CardHeader className="pb-2 pt-3 px-4 border-b border-white/5 bg-white/[0.02]">
+            <CardTitle className="text-[11px] font-mono text-zinc-400 flex items-center gap-2 uppercase tracking-widest">
+              <Activity className="w-3.5 h-3.5 text-blue-400" />
+              Agent Brain
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="p-4 flex-1 flex flex-col justify-center">
+            {activeSession ? (
+              <div className="space-y-4">
+                <div className="flex flex-col gap-1 items-center">
+                  <span className="text-xs text-muted-foreground uppercase tracking-wider">Current Intent</span>
+                  <span className={`text-lg font-black tracking-widest ${actionColor}`}>
+                    {agentAction}
+                  </span>
+                </div>
+                
+                <div className="space-y-2">
+                  <div className="flex justify-between text-[10px] font-mono text-muted-foreground px-1">
+                    <span>-1 (SHORT)</span>
+                    <span>0</span>
+                    <span>+1 (LONG)</span>
+                  </div>
+                  <div className="h-2 w-full bg-zinc-800 rounded-full overflow-hidden relative">
+                    <div 
+                      className={`absolute top-0 left-0 h-full rounded-full transition-all duration-300 ${prediction > 0.5 ? 'bg-green-500' : prediction < -0.5 ? 'bg-red-500' : 'bg-zinc-500'}`}
+                      style={{ width: `${predictionPercent}%` }}
+                    />
+                    <div className="absolute top-0 left-1/2 w-px h-full bg-zinc-400/50 -translate-x-1/2"></div>
+                    <div className="absolute top-0 left-[25%] w-px h-full bg-red-500/30 -translate-x-1/2"></div>
+                    <div className="absolute top-0 left-[75%] w-px h-full bg-green-500/30 -translate-x-1/2"></div>
+                  </div>
+                  <div className="text-center font-mono text-xs text-zinc-300">
+                    Raw Val: {prediction.toFixed(4)}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center justify-center text-muted-foreground gap-2 h-full">
+                <BrainCircuit className="w-8 h-8 opacity-20" />
+                <span className="text-xs">No active agent</span>
               </div>
             )}
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Middle Section: Chart & Stats */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
