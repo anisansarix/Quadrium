@@ -52,7 +52,11 @@ def setup_logging() -> None:
         ],
     )
 
-    file_renderer = structlog.dev.ConsoleRenderer(colors=False) if settings.env == "development" else structlog.processors.JSONRenderer()
+    file_renderer = (
+        structlog.dev.ConsoleRenderer(colors=False)
+        if settings.env == "development"
+        else structlog.processors.JSONRenderer()
+    )
     file_formatter = structlog.stdlib.ProcessorFormatter(
         processors=[
             structlog.stdlib.ProcessorFormatter.remove_processors_meta,
@@ -62,7 +66,7 @@ def setup_logging() -> None:
 
     handler = logging.StreamHandler(sys.stdout)
     handler.setFormatter(formatter)
-    
+
     file_handler = logging.FileHandler("quadrium.log")
     file_handler.setFormatter(file_formatter)
 

@@ -216,6 +216,20 @@ export const useStopLiveSession = () => {
   });
 };
 
+export const useKillSwitch = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.post<{status: string, message: string}>('/live/kill_all');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['live', 'sessions'] });
+      queryClient.invalidateQueries({ queryKey: ['live', 'positions'] });
+    },
+  });
+};
+
 export interface Mt5Position {
   ticket: number;
   symbol: string;

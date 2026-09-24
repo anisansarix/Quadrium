@@ -1,7 +1,9 @@
-from typing import Any, Callable
 import time
-from app.core.logging import get_logger
+from collections.abc import Callable
+from typing import Any
+
 from app.config import settings
+from app.core.logging import get_logger
 
 try:
     import MetaTrader5 as mt5
@@ -9,6 +11,7 @@ except ImportError:
     mt5 = None
 
 logger = get_logger(__name__)
+
 
 class MT5CircuitBreaker:
     def __init__(self):
@@ -30,14 +33,16 @@ class MT5CircuitBreaker:
     def record_success(self):
         self.failures = 0
 
+
 _cb = MT5CircuitBreaker()
+
 
 def with_resilience(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         _cb.check()
         attempts = settings.mt5.retry_attempts
         delay = settings.mt5.retry_delay_seconds
-        
+
         for i in range(attempts):
             try:
                 res = func(*args, **kwargs)
@@ -46,18 +51,21 @@ def with_resilience(func: Callable) -> Callable:
                 _cb.record_success()
                 return res
             except Exception as e:
-                logger.warning(f"MT5 call failed, attempt {i+1}/{attempts}: {e}")
+                logger.warning(f"MT5 call failed, attempt {i + 1}/{attempts}: {e}")
                 if i == attempts - 1:
                     _cb.record_failure()
                     raise
                 time.sleep(delay)
+
     return wrapper
 
 
 class MT5Service:
     @staticmethod
     @with_resilience
-    def connect(login: int | None = None, password: str | None = None, server: str | None = None) -> bool:
+    def connect(
+        login: int | None = None, password: str | None = None, server: str | None = None
+    ) -> bool:
         if mt5 is None:
             logger.error("mt5_not_available")
             return False

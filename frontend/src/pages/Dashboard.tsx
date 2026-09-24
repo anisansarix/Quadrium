@@ -375,18 +375,12 @@ export default function Dashboard() {
                       {exp.name || exp.id}
                     </SelectItem>
                   ))}
-                  {/* Fallback models for UI testing if DB is empty */}
                   <SelectItem value="ppo_XAUUSD_m5">
                     ppo_XAUUSD_m5 (Imported Model)
                   </SelectItem>
-                  <SelectItem value="xauusd_full_scale_rl_1yr">
-                    xauusd_full_scale_rl_1yr
+                  <SelectItem value="ppo_XAUUSD_m15">
+                    ppo_XAUUSD_m15 (Imported Model)
                   </SelectItem>
-                  <SelectItem value="hft_scalper_v4">HFT Scalper V4</SelectItem>
-                  <SelectItem value="grid_volatility_bot">
-                    Volatility Grid Bot
-                  </SelectItem>
-                  <SelectItem value="trend_follower">Trend Follower</SelectItem>
                 </SelectContent>
               </Select>
             </div>

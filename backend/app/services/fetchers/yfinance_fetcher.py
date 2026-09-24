@@ -27,15 +27,11 @@ class YFinanceFetcher(DataFetcher):
     }
 
     async def fetch_historical_data(
-        self,
-        symbol: str,
-        timeframe: str,
-        start: datetime,
-        end: datetime
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> pd.DataFrame:
         """
         Fetch data from yfinance.
-        Note: Yahoo Finance uses different symbols for Forex (e.g. 'EURUSD=X') 
+        Note: Yahoo Finance uses different symbols for Forex (e.g. 'EURUSD=X')
         and Crypto (e.g. 'BTC-USD').
         """
         yf_interval = self.TIMEFRAME_MAP.get(timeframe.upper())
@@ -50,12 +46,8 @@ class YFinanceFetcher(DataFetcher):
             df = await loop.run_in_executor(
                 None,
                 lambda: yf.download(
-                    tickers=symbol,
-                    start=start,
-                    end=end,
-                    interval=yf_interval,
-                    progress=False
-                )
+                    tickers=symbol, start=start, end=end, interval=yf_interval, progress=False
+                ),
             )
         except Exception as e:
             raise DataError(f"Failed to fetch data from Yahoo Finance: {e}")
@@ -69,13 +61,15 @@ class YFinanceFetcher(DataFetcher):
 
         # Map yfinance columns to Quadrium standard columns
         # yfinance columns: 'Open', 'High', 'Low', 'Close', 'Adj Close', 'Volume'
-        df = df.rename(columns={
-            "Open": "open",
-            "High": "high",
-            "Low": "low",
-            "Close": "close",
-            "Volume": "real_volume" # map yf Volume to real_volume
-        })
+        df = df.rename(
+            columns={
+                "Open": "open",
+                "High": "high",
+                "Low": "low",
+                "Close": "close",
+                "Volume": "real_volume",  # map yf Volume to real_volume
+            }
+        )
 
         # Add missing columns with defaults
         df["tick_volume"] = 0
@@ -100,15 +94,21 @@ class YFinanceFetcher(DataFetcher):
 
         # Resample H1 to H4 if requested
         if timeframe.upper() == "H4":
-            df = df.resample("4h").agg({
-                "open": "first",
-                "high": "max",
-                "low": "min",
-                "close": "last",
-                "tick_volume": "sum",
-                "spread": "mean",
-                "real_volume": "sum"
-            }).dropna()
+            df = (
+                df.resample("4h")
+                .agg(
+                    {
+                        "open": "first",
+                        "high": "max",
+                        "low": "min",
+                        "close": "last",
+                        "tick_volume": "sum",
+                        "spread": "mean",
+                        "real_volume": "sum",
+                    }
+                )
+                .dropna()
+            )
 
         # Convert index back to column for consistency if needed, but keeping it as DatetimeIndex is fine for pandas
         df = df.reset_index()

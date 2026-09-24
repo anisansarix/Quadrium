@@ -19,17 +19,15 @@ class DatasetService:
     """
 
     @classmethod
-    def create_dataset(
-        cls, raw_data_id: str, version: str, features: list[str]
-    ) -> str:
+    def create_dataset(cls, raw_data_id: str, version: str, features: list[str]) -> str:
         """
         Create a processed dataset from a raw data source by applying features.
-        
+
         Args:
             raw_data_id: ID of the raw data in market_data_catalog
             version: Version string for the dataset
             features: List of feature names to apply
-            
+
         Returns:
             The dataset catalog entry ID.
         """
@@ -66,7 +64,9 @@ class DatasetService:
         df_processed = FeatureService.apply_features(df, features)
 
         if df_processed.empty:
-            raise DataError("Processed dataset is empty after feature engineering and dropping NaNs.")
+            raise DataError(
+                "Processed dataset is empty after feature engineering and dropping NaNs."
+            )
 
         # 4. Save processed dataset
         processed_dir = settings.resolve_path(settings.data_processed_dir) / version
@@ -84,7 +84,9 @@ class DatasetService:
 
         # 5. Determine new date range and row count after dropping NaNs
         # Assuming there's a 'time' or 'Date' column
-        time_col = next((c for c in df_processed.columns if c.lower() in ["time", "date", "timestamp"]), None)
+        time_col = next(
+            (c for c in df_processed.columns if c.lower() in ["time", "date", "timestamp"]), None
+        )
         if time_col:
             date_start = df_processed[time_col].min().date()
             date_end = df_processed[time_col].max().date()
@@ -118,8 +120,8 @@ class DatasetService:
                 timeframe,
                 raw_data_id,
                 row_count,
-                str(rel_processed_path)
-            ]
+                str(rel_processed_path),
+            ],
         )
 
         log.info("Dataset created and cataloged", dataset_id=dataset_id, rows=row_count)
@@ -154,9 +156,7 @@ class DatasetService:
     def get_dataset(cls, dataset_id: str) -> dict[str, Any]:
         """Get dataset metadata by ID."""
         conn = get_duckdb()
-        rows = conn.execute(
-            "SELECT * FROM dataset_catalog WHERE id = ?", [dataset_id]
-        ).fetchall()
+        rows = conn.execute("SELECT * FROM dataset_catalog WHERE id = ?", [dataset_id]).fetchall()
 
         if not rows:
             raise DataError(f"Dataset with ID {dataset_id} not found.")

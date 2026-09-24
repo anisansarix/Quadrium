@@ -37,7 +37,9 @@ class MLflowLoggingCallback(BaseCallback):
 class Trainer:
     """Orchestrates the RL training process with FinRL and MLflow."""
 
-    def __init__(self, experiment_id: str, df: Any, agent_type: str = "ppo", hyperparams: dict | None = None):
+    def __init__(
+        self, experiment_id: str, df: Any, agent_type: str = "ppo", hyperparams: dict | None = None
+    ):
         self.experiment_id = experiment_id
         self.df = df
         self.agent_type = agent_type

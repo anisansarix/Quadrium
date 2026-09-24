@@ -12,13 +12,16 @@ log = get_logger(__name__)
 
 router = APIRouter(prefix="/risk")
 
+
 class CalculateRiskRequest(BaseModel):
     # For ad-hoc risk calculation. In reality, we'd accept trade JSON.
     equity_curve: list[float]
     initial_balance: float = 10000.0
     # trades: list[dict] = [] # Too complex for basic schema, omitting for now
 
+
 from app.models.schemas import APIResponse
+
 
 @router.post("/calculate", response_model=APIResponse)
 async def calculate_risk(request: CalculateRiskRequest) -> Any:
@@ -29,15 +32,18 @@ async def calculate_risk(request: CalculateRiskRequest) -> Any:
         dd = RiskEngine.max_drawdown(curve)
         trailing_dd = RiskEngine.drawdown_trailing(curve, request.initial_balance)
 
-        return APIResponse(data={
-            "max_drawdown_abs": dd.max_drawdown_abs,
-            "max_drawdown_pct": dd.max_drawdown_pct,
-            "trailing_drawdown_abs": trailing_dd.max_drawdown_abs,
-            "trailing_drawdown_pct": trailing_dd.max_drawdown_pct,
-        })
+        return APIResponse(
+            data={
+                "max_drawdown_abs": dd.max_drawdown_abs,
+                "max_drawdown_pct": dd.max_drawdown_pct,
+                "trailing_drawdown_abs": trailing_dd.max_drawdown_abs,
+                "trailing_drawdown_pct": trailing_dd.max_drawdown_pct,
+            }
+        )
     except Exception as e:
         log.error("Failed to calculate risk", error=str(e))
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.get("/{experiment_id}", response_model=APIResponse)
 async def get_experiment_risk(experiment_id: str) -> Any:
@@ -69,32 +75,42 @@ async def get_experiment_risk(experiment_id: str) -> Any:
         # Build Trade objects
         trades: list[Trade] = []
         for _, row in trades_df.iterrows():
-            trades.append(Trade(
-                id=str(row["id"]),
-                instrument=str(row["instrument"]),
-                direction=str(row["direction"]),
-                entry_time=row["entry_time"],
-                exit_time=row["exit_time"],
-                entry_price=float(row["entry_price"]),
-                exit_price=float(row["exit_price"]),
-                lot_size=float(row["lot_size"]),
-                pnl=float(row["pnl"]),
-                commission=float(row.get("commission", 0)),
-                swap=float(row.get("swap", 0)),
-            ))
+            trades.append(
+                Trade(
+                    id=str(row["id"]),
+                    instrument=str(row["instrument"]),
+                    direction=str(row["direction"]),
+                    entry_time=row["entry_time"],
+                    exit_time=row["exit_time"],
+                    entry_price=float(row["entry_price"]),
+                    exit_price=float(row["exit_price"]),
+                    lot_size=float(row["lot_size"]),
+                    pnl=float(row["pnl"]),
+                    commission=float(row.get("commission", 0)),
+                    swap=float(row.get("swap", 0)),
+                )
+            )
 
         # Build equity curve
-        equity_curve = np.array(equity_df["equity"].tolist()) if not equity_df.empty else np.array([])
+        equity_curve = (
+            np.array(equity_df["equity"].tolist()) if not equity_df.empty else np.array([])
+        )
         initial_balance = float(equity_df["balance"].iloc[0]) if not equity_df.empty else 10000.0
 
         # Calculate all risk metrics
         dd = RiskEngine.max_drawdown(equity_curve) if len(equity_curve) > 0 else None
-        trailing_dd = RiskEngine.drawdown_trailing(equity_curve, initial_balance) if len(equity_curve) > 0 else None
+        trailing_dd = (
+            RiskEngine.drawdown_trailing(equity_curve, initial_balance)
+            if len(equity_curve) > 0
+            else None
+        )
         daily_pnl = RiskEngine.daily_pnl(trades)
         daily_loss = RiskEngine.daily_loss(trades, initial_balance)
 
         # Daily returns for Sharpe/Sortino
-        daily_returns = np.array([d.pnl / initial_balance for d in daily_pnl]) if daily_pnl else np.array([])
+        daily_returns = (
+            np.array([d.pnl / initial_balance for d in daily_pnl]) if daily_pnl else np.array([])
+        )
 
         result = {
             "experiment_id": experiment_id,

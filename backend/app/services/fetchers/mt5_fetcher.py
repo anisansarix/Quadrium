@@ -35,11 +35,7 @@ class MT5Fetcher(DataFetcher):
         }
 
     async def fetch_historical_data(
-        self,
-        symbol: str,
-        timeframe: str,
-        start: datetime,
-        end: datetime
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> pd.DataFrame:
         mt5_timeframe = self.TIMEFRAME_MAP.get(timeframe.upper())
         if mt5_timeframe is None:
@@ -65,19 +61,30 @@ class MT5Fetcher(DataFetcher):
             df = pd.DataFrame(rates)
 
             # MT5 returns time as unix timestamps
-            df['time'] = pd.to_datetime(df['time'], unit='s')
+            df["time"] = pd.to_datetime(df["time"], unit="s")
 
             # Keep necessary columns
-            df = df.rename(columns={'real_volume': 'real_volume'})  # It's already real_volume in MT5
+            df = df.rename(
+                columns={"real_volume": "real_volume"}
+            )  # It's already real_volume in MT5
 
-            expected_cols = ["time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
+            expected_cols = [
+                "time",
+                "open",
+                "high",
+                "low",
+                "close",
+                "tick_volume",
+                "spread",
+                "real_volume",
+            ]
             df = df[expected_cols]
 
             # MT5 times are in broker's timezone.
             # We standardize to UTC. If broker is UTC+2/3, we should ideally shift it,
             # but for simplicity we treat it as UTC localized if not otherwise known,
             # or tz-naive. We will localize it to UTC to match standard interface.
-            df['time'] = df['time'].dt.tz_localize('UTC')
+            df["time"] = df["time"].dt.tz_localize("UTC")
 
             return df
 

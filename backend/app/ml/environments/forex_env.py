@@ -18,10 +18,14 @@ class QuadriumTradingEnv(gym.Env):
 
     metadata = {"render_modes": ["human"]}
 
-    def __init__(self, df: pd.DataFrame, initial_balance: float = 10000.0,
-                 transaction_fee_percent: float = 0.0001,
-                 window_size: int = 20,
-                 reward_scaling: float = 1e-4):
+    def __init__(
+        self,
+        df: pd.DataFrame,
+        initial_balance: float = 10000.0,
+        transaction_fee_percent: float = 0.0001,
+        window_size: int = 20,
+        reward_scaling: float = 1e-4,
+    ):
         super().__init__()
 
         self.df = df.reset_index(drop=True)
@@ -35,7 +39,9 @@ class QuadriumTradingEnv(gym.Env):
         self.feature_cols = [c for c in self.df.columns if c.lower() not in exclude_cols]
 
         # Expect price columns to compute PnL
-        self.close_idx = self.feature_cols.index([c for c in self.feature_cols if c.lower() == "close"][0])
+        self.close_idx = self.feature_cols.index(
+            [c for c in self.feature_cols if c.lower() == "close"][0]
+        )
 
         # Action space: continuous from -1 (max short) to +1 (max long)
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(1,), dtype=np.float32)
@@ -43,11 +49,15 @@ class QuadriumTradingEnv(gym.Env):
         # State space: window of features + current position + current balance
         # Flattened shape: (window_size * num_features) + 2
         obs_shape = (self.window_size * len(self.feature_cols) + 2,)
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=obs_shape, dtype=np.float32)
+        self.observation_space = spaces.Box(
+            low=-np.inf, high=np.inf, shape=obs_shape, dtype=np.float32
+        )
 
         self.reset()
 
-    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None) -> tuple[np.ndarray, dict]:
+    def reset(
+        self, seed: int | None = None, options: dict[str, Any] | None = None
+    ) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
 
         # Start at the point where we have a full window
@@ -75,10 +85,13 @@ class QuadriumTradingEnv(gym.Env):
         obs_features = obs_df.values.flatten()
 
         # Append account state (scaled)
-        account_state = np.array([
-            self.position,  # Current position
-            self.balance / self.initial_balance  # Scaled balance
-        ], dtype=np.float32)
+        account_state = np.array(
+            [
+                self.position,  # Current position
+                self.balance / self.initial_balance,  # Scaled balance
+            ],
+            dtype=np.float32,
+        )
 
         return np.concatenate([obs_features, account_state])
 
@@ -91,7 +104,7 @@ class QuadriumTradingEnv(gym.Env):
             return self._get_observation(), 0.0, True, False, self._get_info()
 
         # Execute action
-        target_position_pct = float(action[0]) # -1.0 to 1.0
+        target_position_pct = float(action[0])  # -1.0 to 1.0
 
         current_price = self._get_close_price(self.current_step)
 
@@ -126,7 +139,7 @@ class QuadriumTradingEnv(gym.Env):
         # Risk constraints: if we lose 50% of the account, terminate
         if self.net_worth <= self.initial_balance * 0.5:
             done = True
-            reward = -1.0 # Large penalty
+            reward = -1.0  # Large penalty
 
         return self._get_observation(), reward, done, False, self._get_info()
 

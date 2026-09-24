@@ -1,43 +1,48 @@
 import asyncio
 from datetime import datetime, timedelta
-import pandas as pd
+
 import numpy as np
+
 try:
     import MetaTrader5 as mt5
 except ImportError:
     mt5 = None  # type: ignore[assignment]
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from app.core.logging import get_logger
+from app.config import settings
 from app.core.database import get_db_session
-from app.models.db import LiveTradingSession
+from app.core.logging import get_logger
 from app.ml.agents.finrl_agents import AgentFactory
 from app.ml.environments.forex_env import QuadriumTradingEnv
+from app.models.db import LiveTradingSession
 from app.services.fetchers.mt5_fetcher import MT5Fetcher
-from app.config import settings
 
 log = get_logger(__name__)
 
+
 class LiveTradingEngine:
     _active_tasks: dict[str, asyncio.Task] = {}
-    
+
     @classmethod
-    async def start_session(cls, session_id: str, experiment_id: str, symbol: str, timeframe: str, config: dict):
+    async def start_session(
+        cls, session_id: str, experiment_id: str, symbol: str, timeframe: str, config: dict
+    ):
         if session_id in cls._active_tasks:
             raise ValueError("Session is already running")
-            
-        task = asyncio.create_task(cls._run_loop(session_id, experiment_id, symbol, timeframe, config))
+
+        task = asyncio.create_task(
+            cls._run_loop(session_id, experiment_id, symbol, timeframe, config)
+        )
         cls._active_tasks[session_id] = task
         log.info(f"Started live trading session {session_id} for {symbol}")
-        
+
     @classmethod
     async def stop_session(cls, session_id: str):
         if session_id in cls._active_tasks:
             cls._active_tasks[session_id].cancel()
             del cls._active_tasks[session_id]
             log.info(f"Stopped live trading session {session_id}")
-            
+
             async with get_db_session() as db:
                 stmt = select(LiveTradingSession).where(LiveTradingSession.id == session_id)
                 res = await db.execute(stmt)
@@ -46,33 +51,35 @@ class LiveTradingEngine:
                     session.status = "stopped"
                     session.stopped_at = datetime.now()
                     await db.commit()
-            
+
     @classmethod
     async def get_active_sessions(cls) -> list[str]:
         return list(cls._active_tasks.keys())
-        
+
     @classmethod
-    async def _run_loop(cls, session_id: str, experiment_id: str, symbol: str, timeframe: str, config: dict):
+    async def _run_loop(
+        cls, session_id: str, experiment_id: str, symbol: str, timeframe: str, config: dict
+    ):
         # Force symbol to uppercase for MT5
         symbol = symbol.upper()
-        
+
         try:
             log.info(f"Session {session_id} booting up model {experiment_id}")
-            
+
             # Load model
             model_path = str(settings.resolve_path("models") / experiment_id / "model")
-            
+
             # Dummy env to load the model correctly
             fetcher = MT5Fetcher()
             end = datetime.now()
             start = end - timedelta(days=1)
             dummy_df = await fetcher.fetch_historical_data(symbol, timeframe, start, end)
-            
+
             dummy_env = QuadriumTradingEnv(df=dummy_df, initial_balance=25000.0)
-            
+
             # Load model without binding the env strictly, to avoid observation space shape mismatches
             model = AgentFactory.load_agent("ppo", model_path, env=None)
-            
+
             # Sync position state from MT5 in case of server restart
             current_position = 0
             if mt5.initialize():
@@ -80,28 +87,38 @@ class LiveTradingEngine:
                 if existing_positions and len(existing_positions) > 0:
                     pos = existing_positions[0]
                     current_position = 1 if pos.type == mt5.ORDER_TYPE_BUY else -1
-                    log.info(f"[{session_id}] Recovered existing MT5 position: {'LONG' if current_position == 1 else 'SHORT'}")
-            
+                    log.info(
+                        f"[{session_id}] Recovered existing MT5 position: {'LONG' if current_position == 1 else 'SHORT'}"
+                    )
+
             # Map timeframe string to MT5 timeframe ID for candle checking
-            mt5_tf_map = {"M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
+            mt5_tf_map = {
+                "M1": mt5.TIMEFRAME_M1,
+                "M5": mt5.TIMEFRAME_M5,
+                "M15": mt5.TIMEFRAME_M15,
+                "H1": mt5.TIMEFRAME_H1,
+            }
             tf_id = mt5_tf_map.get(timeframe, mt5.TIMEFRAME_M5)
-            
+
             last_processed_time = None
             latest_prediction = 0.0
             latest_prediction_time = None
-            
+
             while True:
+
                 def _fetch_state():
-                    if not mt5.initialize(): return None, None
+                    if not mt5.initialize():
+                        return None, None
                     acc = mt5.account_info()
                     rates = mt5.copy_rates_from_pos(symbol, tf_id, 0, 1)
                     return acc, rates
-                    
+
                 acc_info, rates = await asyncio.to_thread(_fetch_state)
-                
+
                 # Fast loop monitoring - Update DB Equity
                 if acc_info:
                     from sqlalchemy.orm.attributes import flag_modified
+
                     async with get_db_session() as db:
                         stmt = select(LiveTradingSession).where(LiveTradingSession.id == session_id)
                         res = await db.execute(stmt)
@@ -117,66 +134,86 @@ class LiveTradingEngine:
                             session.config = current_config
                             flag_modified(session, "config")
                             await db.commit()
-                
+
                 # Check for new candle to run inference
                 if rates is not None and len(rates) > 0:
-                    current_candle_time = rates[-1]['time']
-                    
+                    current_candle_time = rates[-1]["time"]
+
                     if last_processed_time is None or current_candle_time > last_processed_time:
-                        log.info(f"[{session_id}] New candle detected or first run. Fetching latest market state for {symbol}...")
+                        log.info(
+                            f"[{session_id}] New candle detected or first run. Fetching latest market state for {symbol}..."
+                        )
                         last_processed_time = current_candle_time
-                        
+
                         end_dt = datetime.now()
                         start_dt = end_dt - timedelta(days=5)
-                        df = await fetcher.fetch_historical_data(symbol, timeframe, start_dt, end_dt)
-                        
+                        df = await fetcher.fetch_historical_data(
+                            symbol, timeframe, start_dt, end_dt
+                        )
+
                         if len(df) < 50:
                             log.warning(f"[{session_id}] Not enough data to form state.")
                         else:
-                            env = QuadriumTradingEnv(df=df, initial_balance=acc_info.balance if acc_info else 25000.0)
+                            env = QuadriumTradingEnv(
+                                df=df, initial_balance=acc_info.balance if acc_info else 25000.0
+                            )
                             obs, _ = env.reset(options={"current_position": current_position})
-                            
+
                             done = False
                             while not done:
                                 obs, _, done, _, _ = env.step(np.array([0.0]))
-                                
+
                             # Reshape observation to match what the loaded model expects
                             expected_shape = model.observation_space.shape[0]
                             if obs.shape[0] > expected_shape:
                                 obs = obs[:expected_shape]
                             elif obs.shape[0] < expected_shape:
                                 obs = np.pad(obs, (0, expected_shape - obs.shape[0]))
-                                
+
                             action, _ = model.predict(obs, deterministic=True)
-                            
+
                             # Handle different action spaces (e.g. Discrete(3) returns 0D scalar)
                             if action.ndim == 0:
                                 val = int(action)
                                 # Map standard Discrete(3) [0,1,2] -> [-1, 0, 1]
-                                latest_prediction = float(val - 1) if model.action_space.__class__.__name__ == "Discrete" else float(val)
+                                latest_prediction = (
+                                    float(val - 1)
+                                    if model.action_space.__class__.__name__ == "Discrete"
+                                    else float(val)
+                                )
                                 mapped_action = np.array([latest_prediction])
                             else:
                                 latest_prediction = float(action[0])
                                 mapped_action = action
-                                
+
                             latest_prediction_time = datetime.now().isoformat()
-                            log.info(f"[{session_id}] Model predicted action: {mapped_action} (Raw: {action})")
-                            
+                            log.info(
+                                f"[{session_id}] Model predicted action: {mapped_action} (Raw: {action})"
+                            )
+
                             # Lot Sizing
                             if config.get("lot_type") == "auto" and acc_info:
                                 risk_pct = float(config.get("risk_pct", 1.0))
-                                calculated_lot = max(0.01, round(acc_info.equity * 0.00001 * risk_pct, 2))
-                                log.info(f"[{session_id}] Auto Lot Sizing: Eq {acc_info.equity}, Risk {risk_pct}% -> Lot {calculated_lot}")
+                                calculated_lot = max(
+                                    0.01, round(acc_info.equity * 0.00001 * risk_pct, 2)
+                                )
+                                log.info(
+                                    f"[{session_id}] Auto Lot Sizing: Eq {acc_info.equity}, Risk {risk_pct}% -> Lot {calculated_lot}"
+                                )
                             else:
                                 calculated_lot = float(config.get("lot_size", 0.1))
-                                
+
                             current_position = await asyncio.to_thread(
-                                cls._execute_mt5_trade, symbol, mapped_action, current_position, calculated_lot
+                                cls._execute_mt5_trade,
+                                symbol,
+                                mapped_action,
+                                current_position,
+                                calculated_lot,
                             )
-                
+
                 # Fast polling loop sleep
                 await asyncio.sleep(1.0)
-                
+
         except asyncio.CancelledError:
             log.info(f"Session {session_id} was cancelled.")
         except Exception as e:
@@ -189,9 +226,11 @@ class LiveTradingEngine:
                     session.status = "error"
                     session.stopped_at = datetime.now()
                     await db.commit()
-                    
+
     @classmethod
-    def _execute_mt5_trade(cls, symbol: str, action: np.ndarray, current_position: float, lot_size: float = 0.1) -> float:
+    def _execute_mt5_trade(
+        cls, symbol: str, action: np.ndarray, current_position: float, lot_size: float = 0.1
+    ) -> float:
         if not mt5.initialize():
             log.error("MT5 init failed.")
             return current_position
@@ -201,7 +240,7 @@ class LiveTradingEngine:
             target_position = 1
         elif action[0] < -0.5:
             target_position = -1
-            
+
         if target_position == current_position:
             return current_position
 
@@ -214,7 +253,7 @@ class LiveTradingEngine:
                     tick = mt5.symbol_info_tick(symbol)
                     type_ = mt5.ORDER_TYPE_SELL if pos.type == 0 else mt5.ORDER_TYPE_BUY
                     price = tick.bid if pos.type == 0 else tick.ask
-                    
+
                     request = {
                         "action": mt5.TRADE_ACTION_DEAL,
                         "symbol": symbol,
@@ -254,3 +293,47 @@ class LiveTradingEngine:
                 return 0
 
         return target_position
+    @classmethod
+    async def liquidate_all(cls):
+        log.info("KILL SWITCH ACTIVATED: Stopping all sessions and liquidating positions")
+        
+        # Stop all running background loops
+        sessions_to_stop = list(cls._active_tasks.keys())
+        for session_id in sessions_to_stop:
+            await cls.stop_session(session_id)
+            
+        def _close_all():
+            if not mt5.initialize():
+                log.error("MT5 init failed during Kill Switch")
+                return
+                
+            positions = mt5.positions_get()
+            if not positions:
+                return
+                
+            for pos in positions:
+                tick = mt5.symbol_info_tick(pos.symbol)
+                type_ = mt5.ORDER_TYPE_SELL if pos.type == mt5.ORDER_TYPE_BUY else mt5.ORDER_TYPE_BUY
+                price = tick.bid if pos.type == mt5.ORDER_TYPE_BUY else tick.ask
+                
+                request = {
+                    "action": mt5.TRADE_ACTION_DEAL,
+                    "symbol": pos.symbol,
+                    "volume": pos.volume,
+                    "type": type_,
+                    "position": pos.ticket,
+                    "price": price,
+                    "deviation": 20,
+                    "magic": 234000,
+                    "comment": "KILL SWITCH",
+                    "type_time": mt5.ORDER_TIME_GTC,
+                    "type_filling": mt5.ORDER_FILLING_IOC,
+                }
+                res = mt5.order_send(request)
+                if res is None or res.retcode != mt5.TRADE_RETCODE_DONE:
+                    log.error(f"Failed to close position {pos.ticket}: {res.comment}")
+                else:
+                    log.info(f"Successfully closed position {pos.ticket}")
+                    
+        await asyncio.to_thread(_close_all)
+        return {"status": "success", "message": "All sessions stopped and positions liquidated"}

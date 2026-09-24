@@ -1,20 +1,27 @@
 import pandas as pd
-import pandas_ta as ta
 
 from app.core.exceptions import DataError
 from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
+
 class FeatureService:
     """
-    Service for applying technical indicators and feature engineering 
+    Service for applying technical indicators and feature engineering
     on market data DataFrames.
     """
 
     AVAILABLE_FEATURES = {
-        "rsi", "macd", "bollinger_bands", "atr", "ema", "sma",
-        "stochastic", "obv", "adx"
+        "rsi",
+        "macd",
+        "bollinger_bands",
+        "atr",
+        "ema",
+        "sma",
+        "stochastic",
+        "obv",
+        "adx",
     }
 
     @classmethod
@@ -53,16 +60,24 @@ class FeatureService:
                 # Apply features using pandas-ta
                 if f_lower == "rsi":
                     res = df_working.ta.rsi(length=14, append=True)
-                    if res is not None: added_columns.extend(res.columns if isinstance(res, pd.DataFrame) else [res.name])
+                    if res is not None:
+                        added_columns.extend(
+                            res.columns if isinstance(res, pd.DataFrame) else [res.name]
+                        )
                 elif f_lower == "macd":
                     res = df_working.ta.macd(fast=12, slow=26, signal=9, append=True)
-                    if res is not None: added_columns.extend(res.columns)
+                    if res is not None:
+                        added_columns.extend(res.columns)
                 elif f_lower == "bollinger_bands":
                     res = df_working.ta.bbands(length=20, std=2, append=True)
-                    if res is not None: added_columns.extend(res.columns)
+                    if res is not None:
+                        added_columns.extend(res.columns)
                 elif f_lower == "atr":
                     res = df_working.ta.atr(length=14, append=True)
-                    if res is not None: added_columns.extend(res.columns if isinstance(res, pd.DataFrame) else [res.name])
+                    if res is not None:
+                        added_columns.extend(
+                            res.columns if isinstance(res, pd.DataFrame) else [res.name]
+                        )
                 elif f_lower == "ema":
                     res = df_working.ta.ema(length=20, append=True)
                     res2 = df_working.ta.ema(length=50, append=True)

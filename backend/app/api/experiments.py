@@ -108,9 +108,7 @@ async def create_experiment(body: ExperimentCreate) -> APIResponse[ExperimentRes
 async def get_experiment(experiment_id: str) -> APIResponse[ExperimentResponse]:
     """Get a single experiment by ID."""
     async with get_db_session() as session:
-        result = await session.execute(
-            select(Experiment).where(Experiment.id == experiment_id)
-        )
+        result = await session.execute(select(Experiment).where(Experiment.id == experiment_id))
         experiment = result.scalar_one_or_none()
         if experiment is None:
             raise HTTPException(status_code=404, detail="Experiment not found")
@@ -123,9 +121,7 @@ async def update_experiment(
 ) -> APIResponse[ExperimentResponse]:
     """Update an experiment (partial)."""
     async with get_db_session() as session:
-        result = await session.execute(
-            select(Experiment).where(Experiment.id == experiment_id)
-        )
+        result = await session.execute(select(Experiment).where(Experiment.id == experiment_id))
         experiment = result.scalar_one_or_none()
         if experiment is None:
             raise HTTPException(status_code=404, detail="Experiment not found")
@@ -143,9 +139,7 @@ async def update_experiment(
 async def delete_experiment(experiment_id: str) -> APIResponse[None]:
     """Delete an experiment."""
     async with get_db_session() as session:
-        result = await session.execute(
-            select(Experiment).where(Experiment.id == experiment_id)
-        )
+        result = await session.execute(select(Experiment).where(Experiment.id == experiment_id))
         experiment = result.scalar_one_or_none()
         if experiment is None:
             raise HTTPException(status_code=404, detail="Experiment not found")

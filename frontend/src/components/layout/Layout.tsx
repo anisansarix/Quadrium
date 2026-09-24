@@ -5,10 +5,13 @@ import {
   User,
   BrainCircuit,
   Settings,
+  PowerOff,
 } from "lucide-react";
+import { useKillSwitch } from "@/api/hooks";
 
 export default function Layout() {
   const location = useLocation();
+  const killSwitch = useKillSwitch();
 
   const navLinks = [
     { name: "Dashboard", path: "/", icon: LayoutDashboard },
@@ -53,9 +56,13 @@ export default function Layout() {
           <div className="flex items-center gap-4">
             <Button
               size="sm"
-              className="rounded-sm px-4 text-xs font-bold transition-colors"
+              variant="destructive"
+              onClick={() => killSwitch.mutate()}
+              disabled={killSwitch.isPending}
+              className="rounded-sm px-4 text-xs font-bold transition-colors gap-2"
             >
-              Activate
+              <PowerOff className="w-3.5 h-3.5" />
+              {killSwitch.isPending ? "KILLING..." : "KILL SWITCH"}
             </Button>
           </div>
         </div>

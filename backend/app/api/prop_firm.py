@@ -13,6 +13,7 @@ router = APIRouter(prefix="/prop-firm")
 
 from app.models.schemas import APIResponse
 
+
 @router.get("/profiles", response_model=APIResponse)
 async def list_profiles() -> Any:
     """List available prop firm profiles."""
@@ -22,22 +23,26 @@ async def list_profiles() -> Any:
         # Convert to dicts for API response
         profiles_list = []
         for pid, p in profiles.items():
-            profiles_list.append({
-                "id": pid,
-                "name": p.name,
-                "account_size": float(p.account_size),
-                "max_overall_drawdown_pct": float(p.max_overall_drawdown_pct),
-                "max_daily_loss_pct": float(p.max_daily_loss_pct)
-            })
+            profiles_list.append(
+                {
+                    "id": pid,
+                    "name": p.name,
+                    "account_size": float(p.account_size),
+                    "max_overall_drawdown_pct": float(p.max_overall_drawdown_pct),
+                    "max_daily_loss_pct": float(p.max_daily_loss_pct),
+                }
+            )
         return APIResponse(data=profiles_list)
     except Exception as e:
         log.error("Failed to list profiles", error=str(e))
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
 class SimulateRequest(BaseModel):
     profile_id: str
     experiment_id: str
     # In a real system, we fetch trades and equity from DB using experiment_id
+
 
 @router.post("/simulate", response_model=APIResponse)
 async def simulate(request: SimulateRequest) -> Any:

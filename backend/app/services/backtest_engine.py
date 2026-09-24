@@ -12,6 +12,7 @@ from app.services.risk_engine import RiskEngine, Trade
 
 log = get_logger(__name__)
 
+
 class BacktestEngine:
     """
     Executes backtests by running a trained model against a dataset
@@ -25,7 +26,7 @@ class BacktestEngine:
         agent_type: str,
         model_path: str,
         initial_balance: float = 10000.0,
-        instrument: str = "UNKNOWN"
+        instrument: str = "UNKNOWN",
     ):
         self.experiment_id = experiment_id
         self.backtest_id = str(uuid.uuid4())
@@ -45,7 +46,9 @@ class BacktestEngine:
 
     def run(self) -> str:
         """Run the backtest and save results to DuckDB. Returns backtest_id."""
-        log.info("Starting backtest", backtest_id=self.backtest_id, experiment_id=self.experiment_id)
+        log.info(
+            "Starting backtest", backtest_id=self.backtest_id, experiment_id=self.experiment_id
+        )
 
         obs, info = self.env.reset()
 
@@ -82,7 +85,8 @@ class BacktestEngine:
             # If position flips, close and open
 
             # Tolerate small floats
-            def is_zero(v): return abs(v) < 1e-6
+            def is_zero(v):
+                return abs(v) < 1e-6
 
             if not is_zero(new_position) and is_zero(current_position):
                 # Open new trade
@@ -92,7 +96,11 @@ class BacktestEngine:
             elif is_zero(new_position) and not is_zero(current_position):
                 # Close trade
                 direction = "long" if current_position > 0 else "short"
-                pnl = (current_price - current_entry_price) * abs(current_position) if direction == "long" else (current_entry_price - current_price) * abs(current_position)
+                pnl = (
+                    (current_price - current_entry_price) * abs(current_position)
+                    if direction == "long"
+                    else (current_entry_price - current_price) * abs(current_position)
+                )
 
                 trade = Trade(
                     id=str(uuid.uuid4()),
@@ -103,7 +111,7 @@ class BacktestEngine:
                     entry_price=current_entry_price,
                     exit_price=current_price,
                     lot_size=abs(current_position),
-                    pnl=pnl
+                    pnl=pnl,
                 )
                 self.trades.append(trade)
 
@@ -115,7 +123,11 @@ class BacktestEngine:
 
                 if old_dir != new_dir:
                     # Close old
-                    pnl = (current_price - current_entry_price) * abs(current_position) if old_dir == "long" else (current_entry_price - current_price) * abs(current_position)
+                    pnl = (
+                        (current_price - current_entry_price) * abs(current_position)
+                        if old_dir == "long"
+                        else (current_entry_price - current_price) * abs(current_position)
+                    )
                     trade = Trade(
                         id=str(uuid.uuid4()),
                         instrument=self.instrument,
@@ -125,7 +137,7 @@ class BacktestEngine:
                         entry_price=current_entry_price,
                         exit_price=current_price,
                         lot_size=abs(current_position),
-                        pnl=pnl
+                        pnl=pnl,
                     )
                     self.trades.append(trade)
                     # Open new
@@ -146,30 +158,35 @@ class BacktestEngine:
         # 1. Save trades
         trade_records = []
         for t in self.trades:
-            trade_records.append((
-                t.id,
-                self.backtest_id,
-                self.experiment_id,
-                t.instrument,
-                t.direction,
-                t.entry_time,
-                t.exit_time,
-                float(t.entry_price),
-                float(t.exit_price),
-                float(t.lot_size),
-                float(t.pnl),
-                float(t.commission),
-                float(t.swap),
-                "closed"
-            ))
+            trade_records.append(
+                (
+                    t.id,
+                    self.backtest_id,
+                    self.experiment_id,
+                    t.instrument,
+                    t.direction,
+                    t.entry_time,
+                    t.exit_time,
+                    float(t.entry_price),
+                    float(t.exit_price),
+                    float(t.lot_size),
+                    float(t.pnl),
+                    float(t.commission),
+                    float(t.swap),
+                    "closed",
+                )
+            )
 
         if trade_records:
-            conn.executemany("""
+            conn.executemany(
+                """
                 INSERT INTO backtest_trades
                 (id, backtest_id, experiment_id, instrument, direction, entry_time, exit_time, 
                  entry_price, exit_price, lot_size, pnl, commission, swap, status)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, trade_records)
+            """,
+                trade_records,
+            )
 
         # 2. Save metrics
         eq_arr = np.array(self.equity_curve)
@@ -180,19 +197,22 @@ class BacktestEngine:
         sortino = RiskEngine.sortino_ratio(returns)
         pf = RiskEngine.profit_factor(self.trades)
 
-        conn.execute("""
+        conn.execute(
+            """
             INSERT INTO backtest_metrics
             (id, backtest_id, experiment_id, total_trades, win_rate, profit_factor, 
              sharpe_ratio, sortino_ratio, max_drawdown)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, [
-            str(uuid.uuid4()),
-            self.backtest_id,
-            self.experiment_id,
-            len(self.trades),
-            float(RiskEngine.win_rate(self.trades)),
-            float(pf),
-            sharpe,
-            sortino,
-            float(dd.max_drawdown_pct)
-        ])
+        """,
+            [
+                str(uuid.uuid4()),
+                self.backtest_id,
+                self.experiment_id,
+                len(self.trades),
+                float(RiskEngine.win_rate(self.trades)),
+                float(pf),
+                sharpe,
+                sortino,
+                float(dd.max_drawdown_pct),
+            ],
+        )

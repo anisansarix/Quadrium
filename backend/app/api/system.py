@@ -89,7 +89,9 @@ async def gpu_status() -> APIResponse[GPUStatus]:
             error="PyTorch not installed",
         )
 
+
 import os
+
 
 @router.get("/logs", response_model=APIResponse[list[str]])
 async def get_system_logs() -> APIResponse[list[str]]:
@@ -97,14 +99,15 @@ async def get_system_logs() -> APIResponse[list[str]]:
     log_file = "quadrium.log"
     if not os.path.exists(log_file):
         return APIResponse(data=[])
-        
+
     try:
-        with open(log_file, "r") as f:
+        with open(log_file) as f:
             lines = f.readlines()
             # Return last 50 lines
             return APIResponse(data=[line.strip() for line in lines[-50:]])
     except Exception as e:
         return APIResponse(data=[], error=str(e))
+
 
 @router.delete("/logs", response_model=APIResponse[dict])
 async def clear_system_logs() -> APIResponse[dict]:
@@ -112,7 +115,7 @@ async def clear_system_logs() -> APIResponse[dict]:
     log_file = "quadrium.log"
     try:
         if os.path.exists(log_file):
-            open(log_file, 'w').close()
+            open(log_file, "w").close()
         return APIResponse(data={"status": "cleared"})
     except Exception as e:
         return APIResponse(data={"status": "error"}, error=str(e))

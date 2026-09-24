@@ -37,6 +37,7 @@ class DataService:
             The catalog entry ID.
         """
         import re
+
         if not re.match(r"^[A-Za-z0-9._=-]{1,20}$", symbol):
             raise ValueError(f"Invalid symbol format: {symbol}")
         if not re.match(r"^[A-Za-z0-9._-]{1,20}$", timeframe):
@@ -112,8 +113,8 @@ class DataService:
                 row_count,
                 str(rel_path),
                 file_hash,
-                source.lower()
-            ]
+                source.lower(),
+            ],
         )
 
         log.info("Data cataloged successfully", catalog_id=catalog_id, rows=row_count)

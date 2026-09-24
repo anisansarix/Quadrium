@@ -8,6 +8,7 @@ from app.core.logging import get_logger
 
 log = get_logger(__name__)
 
+
 class AgentFactory:
     """
     Factory for instantiating and managing Stable-Baselines3 (FinRL) agents.
@@ -18,10 +19,7 @@ class AgentFactory:
 
     @classmethod
     def create_agent(
-        cls,
-        agent_type: str,
-        env: Env,
-        hyperparams: dict | None = None
+        cls, agent_type: str, env: Env, hyperparams: dict | None = None
     ) -> BaseAlgorithm:
         """Create a new agent instance."""
         agent_type = agent_type.lower()
@@ -34,14 +32,14 @@ class AgentFactory:
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # Default policy kwargs for financial time series
-        policy_kwargs = hyperparams.pop("policy_kwargs", {
-            "net_arch": dict(pi=[64, 64], vf=[64, 64])
-        })
+        policy_kwargs = hyperparams.pop(
+            "policy_kwargs", {"net_arch": dict(pi=[64, 64], vf=[64, 64])}
+        )
 
         # Merge defaults tailored for low VRAM
         if agent_type == "ppo":
             defaults = {
-                "batch_size": 64, # Small batch for 4GB VRAM
+                "batch_size": 64,  # Small batch for 4GB VRAM
                 "n_steps": 2048,
                 "learning_rate": 3e-4,
                 "device": device,
@@ -54,7 +52,7 @@ class AgentFactory:
             defaults = {
                 "batch_size": 64,
                 "learning_rate": 3e-4,
-                "buffer_size": 100000, # Constrained buffer
+                "buffer_size": 100000,  # Constrained buffer
                 "device": device,
                 "policy_kwargs": policy_kwargs,
             }

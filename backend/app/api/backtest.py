@@ -4,7 +4,6 @@ from typing import Any
 import pandas as pd
 from fastapi import APIRouter, BackgroundTasks, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
 
 from app.config import settings
 from app.core.database import get_db_session
@@ -19,6 +18,7 @@ router = APIRouter(prefix="/backtest")
 
 BACKTEST_SEMAPHORE = asyncio.Semaphore(2)
 
+
 class StartBacktestRequest(BaseModel):
     experiment_id: str
     dataset_id: str
@@ -26,6 +26,7 @@ class StartBacktestRequest(BaseModel):
     model_path: str
     initial_balance: float = 10000.0
     instrument: str = "UNKNOWN"
+
 
 async def run_backtest_job(job_id: str, request: StartBacktestRequest):
     async with BACKTEST_SEMAPHORE:
@@ -46,10 +47,11 @@ async def run_backtest_job(job_id: str, request: StartBacktestRequest):
                 agent_type=request.agent_type,
                 model_path=request.model_path,
                 initial_balance=request.initial_balance,
-                instrument=request.instrument
+                instrument=request.instrument,
             )
 
             import anyio
+
             backtest_id = await anyio.to_thread.run_sync(engine.run)
 
             async with get_db_session() as session:
@@ -68,7 +70,9 @@ async def run_backtest_job(job_id: str, request: StartBacktestRequest):
                     job.error_message = str(e)
                     await session.commit()
 
+
 from app.models.schemas import APIResponse
+
 
 @router.post("/start", response_model=APIResponse)
 async def start_backtest(request: StartBacktestRequest, background_tasks: BackgroundTasks) -> Any:
@@ -77,17 +81,14 @@ async def start_backtest(request: StartBacktestRequest, background_tasks: Backgr
         raise HTTPException(status_code=429, detail="Backtest capacity reached. Try again later.")
 
     async with get_db_session() as session:
-        job = Job(
-            job_type="backtest",
-            experiment_id=request.experiment_id,
-            status="queued"
-        )
+        job = Job(job_type="backtest", experiment_id=request.experiment_id, status="queued")
         session.add(job)
         await session.flush()
         job_id = job.id
 
     background_tasks.add_task(run_backtest_job, job_id, request)
     return APIResponse(data={"job_id": job_id})
+
 
 @router.get("/jobs/{job_id}", response_model=APIResponse)
 async def get_job_status(job_id: str) -> Any:
@@ -96,7 +97,15 @@ async def get_job_status(job_id: str) -> Any:
         job = await session.get(Job, job_id)
         if not job:
             raise HTTPException(status_code=404, detail="Job not found")
-        return APIResponse(data={"id": job.id, "status": job.status, "error": job.error_message, "result": job.result})
+        return APIResponse(
+            data={
+                "id": job.id,
+                "status": job.status,
+                "error": job.error_message,
+                "result": job.result,
+            }
+        )
+
 
 from app.core.database import get_duckdb
 
@@ -105,17 +114,22 @@ from app.core.database import get_duckdb
 def get_backtest_trades(backtest_id: str) -> Any:
     """Get all trades generated in a backtest."""
     conn = get_duckdb()
-    result = conn.execute("SELECT * FROM backtest_trades WHERE backtest_id = ?", [backtest_id]).fetchdf()
+    result = conn.execute(
+        "SELECT * FROM backtest_trades WHERE backtest_id = ?", [backtest_id]
+    ).fetchdf()
     if not result.empty:
-        result['entry_time'] = result['entry_time'].astype(str)
-        result['exit_time'] = result['exit_time'].astype(str)
+        result["entry_time"] = result["entry_time"].astype(str)
+        result["exit_time"] = result["exit_time"].astype(str)
     return APIResponse(data=result.to_dict(orient="records"))
+
 
 @router.get("/{backtest_id}/metrics", response_model=APIResponse)
 def get_backtest_metrics(backtest_id: str) -> Any:
     """Get aggregated metrics for a backtest."""
     conn = get_duckdb()
-    result = conn.execute("SELECT * FROM backtest_metrics WHERE backtest_id = ?", [backtest_id]).fetchdf()
+    result = conn.execute(
+        "SELECT * FROM backtest_metrics WHERE backtest_id = ?", [backtest_id]
+    ).fetchdf()
     if result.empty:
         raise HTTPException(status_code=404, detail="Metrics not found")
     return APIResponse(data=result.to_dict(orient="records")[0])

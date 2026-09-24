@@ -12,11 +12,7 @@ class DataFetcher(abc.ABC):
 
     @abc.abstractmethod
     async def fetch_historical_data(
-        self,
-        symbol: str,
-        timeframe: str,
-        start: datetime,
-        end: datetime
+        self, symbol: str, timeframe: str, start: datetime, end: datetime
     ) -> pd.DataFrame:
         """
         Fetch historical OHLCV data.

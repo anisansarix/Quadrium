@@ -8,30 +8,34 @@ import numpy as np
 class Trade:
     id: str
     instrument: str
-    direction: str # 'long' or 'short'
+    direction: str  # 'long' or 'short'
     entry_time: datetime
     exit_time: datetime
     entry_price: float
     exit_price: float
     lot_size: float
-    pnl: float # net profit including commissions/swap
+    pnl: float  # net profit including commissions/swap
     commission: float = 0.0
     swap: float = 0.0
+
 
 @dataclass
 class DrawdownResult:
     max_drawdown_abs: float
     max_drawdown_pct: float
 
+
 @dataclass
 class TrailingDrawdownResult:
     max_drawdown_abs: float
     max_drawdown_pct: float
 
+
 @dataclass
 class DailyPnL:
     date: str
     pnl: float
+
 
 @dataclass
 class DailyLoss:
@@ -39,11 +43,13 @@ class DailyLoss:
     max_loss_abs: float
     max_loss_pct: float
 
+
 @dataclass
 class ConsistencyResult:
     passed: bool
     max_day_share: float
     max_trade_share: float
+
 
 class RiskEngine:
     """
@@ -72,13 +78,12 @@ class RiskEngine:
             if dd_pct > max_dd_pct:
                 max_dd_pct = dd_pct
 
-        return DrawdownResult(
-            max_drawdown_abs=max_dd_abs,
-            max_drawdown_pct=max_dd_pct
-        )
+        return DrawdownResult(max_drawdown_abs=max_dd_abs, max_drawdown_pct=max_dd_pct)
 
     @staticmethod
-    def drawdown_trailing(equity_curve: np.ndarray, initial_balance: float) -> TrailingDrawdownResult:
+    def drawdown_trailing(
+        equity_curve: np.ndarray, initial_balance: float
+    ) -> TrailingDrawdownResult:
         """Trailing drawdown from highest watermark relative to initial balance."""
         if len(equity_curve) == 0:
             return TrailingDrawdownResult(0.0, 0.0)
@@ -99,21 +104,23 @@ class RiskEngine:
             if dd_pct > max_dd_pct:
                 max_dd_pct = dd_pct
 
-        return TrailingDrawdownResult(
-            max_drawdown_abs=max_dd_abs,
-            max_drawdown_pct=max_dd_pct
-        )
+        return TrailingDrawdownResult(max_drawdown_abs=max_dd_abs, max_drawdown_pct=max_dd_pct)
 
     @staticmethod
     def daily_pnl(trades: list[Trade], timezone: str = "UTC") -> list[DailyPnL]:
         """Daily P&L with timezone-aware day boundaries."""
         import pandas as pd
+
         if not trades:
             return []
 
         daily = {}
         for t in trades:
-            date_str = pd.Timestamp(t.exit_time).tz_convert(timezone).strftime("%Y-%m-%d") if hasattr(pd.Timestamp(t.exit_time), "tz_convert") and pd.Timestamp(t.exit_time).tz else pd.Timestamp(t.exit_time).strftime("%Y-%m-%d")
+            date_str = (
+                pd.Timestamp(t.exit_time).tz_convert(timezone).strftime("%Y-%m-%d")
+                if hasattr(pd.Timestamp(t.exit_time), "tz_convert") and pd.Timestamp(t.exit_time).tz
+                else pd.Timestamp(t.exit_time).strftime("%Y-%m-%d")
+            )
 
             if date_str not in daily:
                 daily[date_str] = 0.0
@@ -123,7 +130,12 @@ class RiskEngine:
         return result
 
     @staticmethod
-    def daily_loss(trades: list[Trade], start_balance: float, timezone: str = "UTC", include_floating: bool = True) -> list[DailyLoss]:
+    def daily_loss(
+        trades: list[Trade],
+        start_balance: float,
+        timezone: str = "UTC",
+        include_floating: bool = True,
+    ) -> list[DailyLoss]:
         """
         Daily loss calculation. In a real engine, this requires minute-by-minute equity curve.
         Since we only have trades here, we estimate based on trade exit times.
@@ -140,11 +152,7 @@ class RiskEngine:
                 loss = abs(d.pnl)
 
             loss_pct = loss / current_balance if current_balance > 0 else 0.0
-            results.append(DailyLoss(
-                date=d.date,
-                max_loss_abs=loss,
-                max_loss_pct=loss_pct
-            ))
+            results.append(DailyLoss(date=d.date, max_loss_abs=loss, max_loss_pct=loss_pct))
             current_balance += d.pnl
 
         return results
@@ -169,7 +177,9 @@ class RiskEngine:
         return float(((mean_return - risk_free_rate) / std_return) * np.sqrt(periods))
 
     @staticmethod
-    def sortino_ratio(returns: np.ndarray, risk_free_rate: float = 0.0, periods: int = 252) -> float:
+    def sortino_ratio(
+        returns: np.ndarray, risk_free_rate: float = 0.0, periods: int = 252
+    ) -> float:
         if len(returns) < 2:
             return 0.0
         mean_return = np.mean(returns)
@@ -225,7 +235,9 @@ class RiskEngine:
         return avg_win / avg_loss
 
     @staticmethod
-    def consistency_score(trades: list[Trade], daily_pnl: list[DailyPnL], threshold_pct: float) -> ConsistencyResult:
+    def consistency_score(
+        trades: list[Trade], daily_pnl: list[DailyPnL], threshold_pct: float
+    ) -> ConsistencyResult:
         """
         Check if any single day or single trade exceeds threshold_pct of total profit.
         """
@@ -239,7 +251,7 @@ class RiskEngine:
         total_profit = sum(profits)
         max_day = max(profits)
         max_day_share = max_day / total_profit
-        
+
         max_trade_share = 0.0
         trade_profits = [t.pnl for t in trades if t.pnl > 0]
         if trade_profits:
@@ -247,7 +259,5 @@ class RiskEngine:
 
         passed = max_day_share <= threshold_pct and max_trade_share <= threshold_pct
         return ConsistencyResult(
-            passed=passed,
-            max_day_share=max_day_share,
-            max_trade_share=max_trade_share
+            passed=passed, max_day_share=max_day_share, max_trade_share=max_trade_share
         )

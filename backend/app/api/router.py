@@ -9,11 +9,11 @@ from app.api.data import router as data_router
 from app.api.datasets import router as datasets_router
 from app.api.experiments import router as experiments_router
 from app.api.features import router as features_router
+from app.api.live_trading import router as live_trading_router
 from app.api.prop_firm import router as prop_firm_router
 from app.api.risk import router as risk_router
 from app.api.system import router as system_router
 from app.api.training import router as training_router
-from app.api.live_trading import router as live_trading_router
 
 api_router = APIRouter(prefix="/api")
 
