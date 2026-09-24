@@ -69,9 +69,18 @@ class LiveTradingEngine:
             dummy_df = await fetcher.fetch_historical_data(symbol, timeframe, start, end)
             
             dummy_env = QuadriumTradingEnv(df=dummy_df, initial_balance=25000.0)
-            model = AgentFactory.load_agent("ppo", model_path, env=dummy_env)
             
+            # Load model without binding the env strictly, to avoid observation space shape mismatches
+            model = AgentFactory.load_agent("ppo", model_path, env=None)
+            
+            # Sync position state from MT5 in case of server restart
             current_position = 0
+            if mt5.initialize():
+                existing_positions = mt5.positions_get(symbol=symbol)
+                if existing_positions and len(existing_positions) > 0:
+                    pos = existing_positions[0]
+                    current_position = 1 if pos.type == mt5.ORDER_TYPE_BUY else -1
+                    log.info(f"[{session_id}] Recovered existing MT5 position: {'LONG' if current_position == 1 else 'SHORT'}")
             
             # Map timeframe string to MT5 timeframe ID for candle checking
             mt5_tf_map = {"M1": mt5.TIMEFRAME_M1, "M5": mt5.TIMEFRAME_M5, "M15": mt5.TIMEFRAME_M15, "H1": mt5.TIMEFRAME_H1}
@@ -92,6 +101,7 @@ class LiveTradingEngine:
                 
                 # Fast loop monitoring - Update DB Equity
                 if acc_info:
+                    from sqlalchemy.orm.attributes import flag_modified
                     async with get_db_session() as db:
                         stmt = select(LiveTradingSession).where(LiveTradingSession.id == session_id)
                         res = await db.execute(stmt)
@@ -104,7 +114,8 @@ class LiveTradingEngine:
                             current_config["latest_prediction"] = latest_prediction
                             if latest_prediction_time:
                                 current_config["latest_prediction_time"] = latest_prediction_time
-                            session.config = current_config.copy()
+                            session.config = current_config
+                            flag_modified(session, "config")
                             await db.commit()
                 
                 # Check for new candle to run inference
@@ -123,16 +134,33 @@ class LiveTradingEngine:
                             log.warning(f"[{session_id}] Not enough data to form state.")
                         else:
                             env = QuadriumTradingEnv(df=df, initial_balance=acc_info.balance if acc_info else 25000.0)
-                            obs, _ = env.reset()
+                            obs, _ = env.reset(options={"current_position": current_position})
                             
                             done = False
                             while not done:
                                 obs, _, done, _, _ = env.step(np.array([0.0]))
                                 
+                            # Reshape observation to match what the loaded model expects
+                            expected_shape = model.observation_space.shape[0]
+                            if obs.shape[0] > expected_shape:
+                                obs = obs[:expected_shape]
+                            elif obs.shape[0] < expected_shape:
+                                obs = np.pad(obs, (0, expected_shape - obs.shape[0]))
+                                
                             action, _ = model.predict(obs, deterministic=True)
-                            latest_prediction = float(action[0])
+                            
+                            # Handle different action spaces (e.g. Discrete(3) returns 0D scalar)
+                            if action.ndim == 0:
+                                val = int(action)
+                                # Map standard Discrete(3) [0,1,2] -> [-1, 0, 1]
+                                latest_prediction = float(val - 1) if model.action_space.__class__.__name__ == "Discrete" else float(val)
+                                mapped_action = np.array([latest_prediction])
+                            else:
+                                latest_prediction = float(action[0])
+                                mapped_action = action
+                                
                             latest_prediction_time = datetime.now().isoformat()
-                            log.info(f"[{session_id}] Model predicted action: {action}")
+                            log.info(f"[{session_id}] Model predicted action: {mapped_action} (Raw: {action})")
                             
                             # Lot Sizing
                             if config.get("lot_type") == "auto" and acc_info:
@@ -143,7 +171,7 @@ class LiveTradingEngine:
                                 calculated_lot = float(config.get("lot_size", 0.1))
                                 
                             current_position = await asyncio.to_thread(
-                                cls._execute_mt5_trade, symbol, action, current_position, calculated_lot
+                                cls._execute_mt5_trade, symbol, mapped_action, current_position, calculated_lot
                             )
                 
                 # Fast polling loop sleep

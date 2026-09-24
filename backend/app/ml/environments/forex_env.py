@@ -58,7 +58,7 @@ class QuadriumTradingEnv(gym.Env):
         self.max_net_worth = self.initial_balance
 
         # Position sizing (number of units held). >0 is long, <0 is short.
-        self.position = 0.0
+        self.position = float(options.get("current_position", 0.0)) if options else 0.0
         self.current_price = self._get_close_price(self.current_step)
 
         return self._get_observation(), self._get_info()

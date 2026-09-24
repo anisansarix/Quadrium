@@ -134,3 +134,59 @@ if _MT5_AVAILABLE:
         positions = await asyncio.to_thread(_fetch_pos)
         return {"positions": positions}
 
+
+@router.get("/{session_id}/history")
+async def get_history(session_id: str):
+    def _fetch_hist():
+        if not mt5.initialize():
+            return {"trades": [], "stats": {}}
+            
+        from datetime import datetime, timedelta
+        
+        date_to = datetime.now()
+        date_from = date_to - timedelta(days=30)
+        deals = mt5.history_deals_get(date_from, date_to)
+        
+        if deals is None:
+            return {"trades": [], "stats": {}}
+            
+        trades = []
+        total_trades = 0
+        winning_trades = 0
+        gross_profit = 0.0
+        gross_loss = 0.0
+        
+        for d in reversed(deals):
+            if d.entry in (1, 2):  # ENTRY_OUT or ENTRY_INOUT
+                total_trades += 1
+                if d.profit > 0:
+                    winning_trades += 1
+                    gross_profit += d.profit
+                else:
+                    gross_loss += abs(d.profit)
+                    
+                trades.append({
+                    "id": f"T-{d.ticket}",
+                    "date": datetime.fromtimestamp(d.time).strftime("%Y-%m-%d %H:%M"),
+                    "pair": d.symbol,
+                    "type": "Buy" if d.type == 0 else "Sell",
+                    "lots": d.volume,
+                    "open": d.price,  # Approximate
+                    "close": d.price, # Deal execution price
+                    "status": "win" if d.profit >= 0 else "loss",
+                    "pl": d.profit
+                })
+                
+        win_rate = (winning_trades / total_trades * 100) if total_trades > 0 else 0.0
+        profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (gross_profit if gross_profit > 0 else 0.0)
+        
+        stats = {
+            "win_rate": round(win_rate, 1),
+            "total_trades": total_trades,
+            "profit_factor": round(profit_factor, 2)
+        }
+        
+        return {"trades": trades[:50], "stats": stats}
+        
+    data = await asyncio.to_thread(_fetch_hist)
+    return data

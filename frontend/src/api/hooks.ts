@@ -252,3 +252,50 @@ export const useSystemLogs = () => {
   });
 };
 
+export const useClearSystemLogs = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const { data } = await apiClient.delete<ApiResponse<{status: string}>>('/system/logs');
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['system', 'logs'] });
+    },
+  });
+};
+
+
+export interface Mt5HistoryTrade {
+  id: string;
+  date: string;
+  pair: string;
+  type: string;
+  lots: number;
+  open: number;
+  close: number;
+  status: string;
+  pl: number;
+}
+
+export interface Mt5HistoryStats {
+  win_rate: number;
+  total_trades: number;
+  profit_factor: number;
+}
+
+export interface Mt5HistoryResponse {
+  trades: Mt5HistoryTrade[];
+  stats: Mt5HistoryStats;
+}
+
+export const useMt5History = (sessionId: string = "default") => {
+  return useQuery({
+    queryKey: ['live', 'history', sessionId],
+    queryFn: async () => {
+      const { data } = await apiClient.get<Mt5HistoryResponse>(`/live/${sessionId}/history`);
+      return data;
+    },
+    refetchInterval: 10000,
+  });
+};

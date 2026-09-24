@@ -25,6 +25,7 @@ import {
   AlertCircle,
   Shield,
   BrainCircuit,
+  Trash2,
 } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import {
@@ -51,7 +52,9 @@ import {
   useStartLiveSession,
   useLiveSessions,
   useMt5Positions,
+  useMt5History,
   useSystemLogs,
+  useClearSystemLogs,
 } from "@/api/hooks";
 
 const chartConfig = {
@@ -61,68 +64,11 @@ const chartConfig = {
   },
 } satisfies ChartConfig;
 
-const recentTrades = [
-  {
-    id: "T-8921",
-    date: "2026-03-24 14:20",
-    pair: "XAUUSD",
-    type: "Buy",
-    lots: 5.0,
-    open: 2154.3,
-    close: 2158.5,
-    pl: 2100.0,
-    status: "win",
-  },
-  {
-    id: "T-8920",
-    date: "2026-03-24 10:15",
-    pair: "EURUSD",
-    type: "Sell",
-    lots: 10.0,
-    open: 1.0854,
-    close: 1.0865,
-    pl: -1100.0,
-    status: "loss",
-  },
-  {
-    id: "T-8919",
-    date: "2026-03-23 16:45",
-    pair: "US30",
-    type: "Buy",
-    lots: 2.0,
-    open: 39150,
-    close: 39220,
-    pl: 1400.0,
-    status: "win",
-  },
-  {
-    id: "T-8918",
-    date: "2026-03-23 09:30",
-    pair: "GBPUSD",
-    type: "Buy",
-    lots: 5.0,
-    open: 1.264,
-    close: 1.2655,
-    pl: 750.0,
-    status: "win",
-  },
-  {
-    id: "T-8917",
-    date: "2026-03-22 13:10",
-    pair: "BTCUSD",
-    type: "Sell",
-    lots: 1.0,
-    open: 65400,
-    close: 65100,
-    pl: 300.0,
-    status: "win",
-  },
-];
-
 export default function Dashboard() {
   const { data: health, isLoading } = useSystemHealth();
   const { data: mt5Account } = useMt5Account();
   const { data: systemLogs } = useSystemLogs();
+  const clearSystemLogs = useClearSystemLogs();
   const { data: experiments } = useExperiments();
   const startLiveSession = useStartLiveSession();
   const { data: liveSessions } = useLiveSessions();
@@ -140,6 +86,7 @@ export default function Dashboard() {
   else if (prediction < -0.5) { agentAction = "SELL (SHORT)"; actionColor = "text-red-500"; }
 
   const { data: positions } = useMt5Positions(activeSessionId);
+  const { data: historyData } = useMt5History(activeSessionId);
 
   const [experimentId, setExperimentId] = useState("");
   const [symbol, setSymbol] = useState("XAUUSD");
@@ -429,6 +376,9 @@ export default function Dashboard() {
                     </SelectItem>
                   ))}
                   {/* Fallback models for UI testing if DB is empty */}
+                  <SelectItem value="ppo_XAUUSD_m5">
+                    ppo_XAUUSD_m5 (Imported Model)
+                  </SelectItem>
                   <SelectItem value="xauusd_full_scale_rl_1yr">
                     xauusd_full_scale_rl_1yr
                   </SelectItem>
@@ -610,9 +560,9 @@ export default function Dashboard() {
                             <TableCell>
                               <Badge
                                 variant="outline"
-                                className={`text-[10px] px-1.5 py-0 ${trade.type === "Buy" || trade.type === "0" ? "text-blue-400 border-blue-400/20 bg-blue-400/10" : "text-orange-400 border-orange-400/20 bg-orange-400/10"}`}
+                                className={`text-[10px] px-1.5 py-0 ${trade.type?.toString().toLowerCase() === "buy" || trade.type?.toString() === "0" ? "text-blue-400 border-blue-400/20 bg-blue-400/10" : "text-orange-400 border-orange-400/20 bg-orange-400/10"}`}
                               >
-                                {trade.type === "0" || trade.type === "Buy"
+                                {trade.type?.toString().toLowerCase() === "buy" || trade.type?.toString() === "0"
                                   ? "Buy"
                                   : "Sell"}
                               </Badge>
@@ -681,45 +631,56 @@ export default function Dashboard() {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {recentTrades.map((trade) => (
-                        <TableRow
-                          key={trade.id}
-                          className="border-white/5 hover:bg-white/5"
-                        >
-                          <TableCell className="font-mono text-[11px] text-zinc-300">
-                            {trade.id}
-                          </TableCell>
-                          <TableCell className="text-zinc-500 text-[11px]">
-                            {trade.date}
-                          </TableCell>
-                          <TableCell className="font-medium text-xs text-zinc-200">
-                            {trade.pair}
-                          </TableCell>
-                          <TableCell>
-                            <Badge
-                              variant="outline"
-                              className={`text-[10px] px-1.5 py-0 ${trade.type === "Buy" ? "text-blue-400 border-blue-400/20 bg-blue-400/10" : "text-orange-400 border-orange-400/20 bg-orange-400/10"}`}
-                            >
-                              {trade.type}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-right text-xs text-zinc-300">
-                            {trade.lots.toFixed(2)}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-xs text-zinc-300">
-                            {trade.open}
-                          </TableCell>
-                          <TableCell className="text-right font-mono text-xs text-zinc-300">
-                            {trade.close}
-                          </TableCell>
-                          <TableCell
-                            className={`text-right font-bold text-xs ${trade.status === "win" ? "text-[#78b30a]" : "text-red-500"}`}
+                      {historyData?.trades && historyData.trades.length > 0 ? (
+                        historyData.trades.map((trade) => (
+                          <TableRow
+                            key={trade.id}
+                            className="border-white/5 hover:bg-white/5"
                           >
-                            {trade.status === "win" ? "+" : ""}$
-                            {trade.pl.toFixed(2)}
+                            <TableCell className="font-mono text-[11px] text-zinc-300">
+                              {trade.id}
+                            </TableCell>
+                            <TableCell className="text-zinc-500 text-[11px]">
+                              {trade.date}
+                            </TableCell>
+                            <TableCell className="font-medium text-xs text-zinc-200">
+                              {trade.pair}
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                variant="outline"
+                                className={`text-[10px] px-1.5 py-0 ${trade.type?.toString().toLowerCase() === "buy" ? "text-blue-400 border-blue-400/20 bg-blue-400/10" : "text-orange-400 border-orange-400/20 bg-orange-400/10"}`}
+                              >
+                                {trade.type?.toString().toLowerCase() === "buy" ? "Buy" : "Sell"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-right text-xs text-zinc-300">
+                              {trade.lots.toFixed(2)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs text-zinc-300">
+                              {trade.open.toFixed(5)}
+                            </TableCell>
+                            <TableCell className="text-right font-mono text-xs text-zinc-300">
+                              {trade.close.toFixed(5)}
+                            </TableCell>
+                            <TableCell
+                              className={`text-right font-bold text-xs ${trade.status === "win" ? "text-[#78b30a]" : "text-red-500"}`}
+                            >
+                              {trade.status === "win" ? "+" : ""}$
+                              {trade.pl.toFixed(2)}
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      ) : (
+                        <TableRow>
+                          <TableCell
+                            colSpan={8}
+                            className="text-center text-zinc-500 py-8"
+                          >
+                            No closed trades found in history
                           </TableCell>
                         </TableRow>
-                      ))}
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -732,15 +693,45 @@ export default function Dashboard() {
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-3 mt-3">
         <Card className="bg-[#09090b] border-border/50 rounded-md overflow-hidden relative lg:col-span-3">
           <div className="absolute top-0 left-0 w-full h-px bg-gradient-to-r from-transparent via-primary/50 to-transparent opacity-50"></div>
-          <CardHeader className="pb-2 pt-3 px-4 border-b border-white/5 bg-white/[0.02]">
+          <CardHeader className="pb-2 pt-3 px-4 border-b border-white/5 bg-white/[0.02] flex flex-row items-center justify-between">
             <CardTitle className="text-[11px] font-mono text-zinc-400 flex items-center gap-2 uppercase tracking-widest">
               <div className="w-1.5 h-1.5 rounded-full bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]"></div>
               System Logs
             </CardTitle>
+            <Button 
+              variant="ghost" 
+              size="icon" 
+              className="h-6 w-6 text-zinc-500 hover:text-zinc-300 -mt-1 -mr-1"
+              onClick={() => clearSystemLogs.mutate()}
+              disabled={clearSystemLogs.isPending}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </CardHeader>
           <CardContent className="p-4 font-mono text-[11px] h-[160px] overflow-y-auto">
             <div className="space-y-1 text-zinc-400">
               {systemLogs?.length ? systemLogs.map((logStr, i) => {
+                const match = logStr.match(/^([\d-]+T[\d:.]+Z)\s+\[(.*?)\s*\]\s+(.*)/);
+                
+                if (match) {
+                  const date = new Date(match[1]);
+                  const timeStr = isNaN(date.getTime()) ? match[1] : date.toLocaleTimeString([], { hour12: false });
+                  const level = match[2].trim().toLowerCase();
+                  
+                  let levelColor = "text-blue-400";
+                  if (level === "error") levelColor = "text-red-400";
+                  else if (level === "warning" || level === "warn") levelColor = "text-yellow-400";
+                  else if (level === "info") levelColor = "text-green-400";
+                  
+                  return (
+                    <div key={i} className="flex gap-3 whitespace-nowrap overflow-hidden text-ellipsis hover:text-zinc-300">
+                      <span className="text-zinc-500 w-16 shrink-0">{timeStr}</span>
+                      <span className={`uppercase w-12 shrink-0 ${levelColor}`}>{level}</span>
+                      <span className="text-zinc-300">{match[3]}</span>
+                    </div>
+                  );
+                }
+
                 return (
                   <div key={i} className="flex gap-3 whitespace-nowrap overflow-hidden text-ellipsis hover:text-zinc-300">
                     <span className="text-zinc-500">{logStr}</span>
@@ -887,9 +878,9 @@ export default function Dashboard() {
                 <span className="text-[11px] font-medium text-muted-foreground uppercase tracking-widest">
                   Win Rate
                 </span>
-                <span className="text-lg font-bold tabular-nums">68.4%</span>
+                <span className="text-lg font-bold tabular-nums">{historyData?.stats?.win_rate ?? 0}%</span>
               </div>
-              <Progress value={68.4} className="h-1.5" />
+              <Progress value={historyData?.stats?.win_rate ?? 0} className="h-1.5" />
             </div>
 
             <div className="grid grid-cols-2 gap-y-3 gap-x-4 pt-3 border-t border-border/50">
@@ -897,14 +888,14 @@ export default function Dashboard() {
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
                   Total Trades
                 </p>
-                <p className="text-sm font-semibold tabular-nums">142</p>
+                <p className="text-sm font-semibold tabular-nums">{historyData?.stats?.total_trades ?? 0}</p>
               </div>
               <div>
                 <p className="text-[10px] uppercase tracking-wider text-muted-foreground mb-0.5">
                   Profit Factor
                 </p>
                 <p className="text-sm font-semibold tabular-nums text-primary">
-                  1.82
+                  {historyData?.stats?.profit_factor?.toFixed(2) ?? "0.00"}
                 </p>
               </div>
               <div>

@@ -102,6 +102,17 @@ async def get_system_logs() -> APIResponse[list[str]]:
         with open(log_file, "r") as f:
             lines = f.readlines()
             # Return last 50 lines
-            return APIResponse(data=lines[-50:])
+            return APIResponse(data=[line.strip() for line in lines[-50:]])
     except Exception as e:
         return APIResponse(data=[], error=str(e))
+
+@router.delete("/logs", response_model=APIResponse[dict])
+async def clear_system_logs() -> APIResponse[dict]:
+    """Clear the system logs."""
+    log_file = "quadrium.log"
+    try:
+        if os.path.exists(log_file):
+            open(log_file, 'w').close()
+        return APIResponse(data={"status": "cleared"})
+    except Exception as e:
+        return APIResponse(data={"status": "error"}, error=str(e))
