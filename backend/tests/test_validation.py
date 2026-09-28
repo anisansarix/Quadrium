@@ -6,7 +6,10 @@ from app.data.mt5_validation import MarginModel, validate_calculations
 def test_margin_validation_precision_pass():
     client = MagicMock()
     # Mocking order_calc_profit to return something so it passes
-    client.order_calc_profit.return_value = 0.0 # profit logic will calc 0 for 0 diff
+    def mock_calc_profit(action, symbol, volume, price_open, price_close):
+        if action == 0: return (price_close - price_open) * volume * 100000.0
+        return (price_open - price_close) * volume * 100000.0
+    client.order_calc_profit.side_effect = mock_calc_profit # profit logic will calc 0 for 0 diff
     
     # Let's mock order_calc_margin specifically for scenarios
     # Scenarios:
@@ -41,6 +44,7 @@ def test_margin_validation_precision_pass():
         account_currency="USD",
         margin_calculation_mode="0",
         margin_rate=1.0,
+        margin_rate_source="configured_phase1_profile",
         account_currency_decimals=2
     )
     
@@ -80,6 +84,7 @@ def test_margin_validation_fail_difference():
         account_currency="USD",
         margin_calculation_mode="0",
         margin_rate=1.0,
+        margin_rate_source="configured_phase1_profile",
         account_currency_decimals=2
     )
     
@@ -89,7 +94,10 @@ def test_margin_validation_fail_difference():
 
 def test_margin_validation_unsupported_mode():
     client = MagicMock()
-    client.order_calc_profit.return_value = 0.0
+    def mock_calc_profit(action, symbol, volume, price_open, price_close):
+        if action == 0: return (price_close - price_open) * volume * 100000.0
+        return (price_open - price_close) * volume * 100000.0
+    client.order_calc_profit.side_effect = mock_calc_profit
     client.order_calc_margin.return_value = 100.0
     
     spec = MagicMock()
@@ -99,6 +107,7 @@ def test_margin_validation_unsupported_mode():
         account_currency="USD",
         margin_calculation_mode="CFD",
         margin_rate=1.0,
+        margin_rate_source="configured_phase1_profile",
         account_currency_decimals=2
     )
     
@@ -116,6 +125,7 @@ def test_margin_validation_invalid_rate():
         account_currency="USD",
         margin_calculation_mode="0",
         margin_rate=0.0,
+        margin_rate_source="configured_phase1_profile",
         account_currency_decimals=2
     )
     report = validate_calculations(client, "EURUSD", spec, margin_model)
@@ -123,3 +133,82 @@ def test_margin_validation_invalid_rate():
     assert len(report.margin_diffs) == 0
 
 
+
+def test_margin_validation_fail_rate():
+    from app.data.mt5_validation import MarginModel, validate_calculations
+    client = MagicMock()
+    def mock_calc_profit(action, symbol, volume, price_open, price_close):
+        if action == 0: return (price_close - price_open) * volume * 100000.0
+        return (price_open - price_close) * volume * 100000.0
+    client.order_calc_profit.side_effect = mock_calc_profit
+    
+    # 1 lot EURUSD with margin_rate=2.0 implies mt5 should return ~6666.67
+    # If we return 3333.33, implied rate is 1.0, but configured is 2.0. This should FAIL.
+    client.order_calc_margin.return_value = 3333.33
+    
+    spec = MagicMock()
+    spec.contract_size = 100000.0
+    margin_model = MarginModel(
+        leverage=33.0,
+        account_currency="USD",
+        margin_calculation_mode="0",
+        margin_rate=2.0,
+        margin_rate_source="configured_phase1_profile",
+        account_currency_decimals=2
+    )
+    
+    report = validate_calculations(client, "EURUSD", spec, margin_model)
+    assert report.all_passed is False
+    assert report.margin_diffs[0].passed is False
+
+def test_margin_validation_normalization():
+    from app.data.mt5_validation import MarginModel, validate_calculations
+    client = MagicMock()
+    def mock_calc_profit(action, symbol, volume, price_open, price_close):
+        if action == 0: return (price_close - price_open) * volume * 100000.0
+        return (price_open - price_close) * volume * 100000.0
+    client.order_calc_profit.side_effect = mock_calc_profit
+    # Let's say theoretical is 3333.3333...
+    # MT5 returns 3333.333
+    def mock_calc_margin(action, symbol, volume, price_open):
+        if volume == 1.0: return 3333.333
+        if volume == 0.5: return 1666.667
+        if volume == 2.0: return 6666.667
+        return 0.0
+    client.order_calc_margin.side_effect = mock_calc_margin
+    spec = MagicMock()
+    spec.contract_size = 100000.0
+    
+    margin_model = MarginModel(
+        leverage=33.0,
+        account_currency="USD",
+        margin_calculation_mode="0",
+        margin_rate=1.0,
+        margin_rate_source="configured_phase1_profile",
+        account_currency_decimals=3  # 3 decimals
+    )
+    
+    report = validate_calculations(client, "EURUSD", spec, margin_model)
+    # theoretical 3333.3333... quantized to 3 decimals is 3333.333. Diff is 0.0
+    assert report.all_passed is True
+
+def test_margin_rate_provenance():
+    from app.data.mt5_validation import MarginModel, validate_calculations
+    client = MagicMock()
+    def mock_calc_profit(action, symbol, volume, price_open, price_close):
+        if action == 0: return (price_close - price_open) * volume * 100000.0
+        return (price_open - price_close) * volume * 100000.0
+    client.order_calc_profit.side_effect = mock_calc_profit
+    client.order_calc_margin.return_value = 3333.33
+    spec = MagicMock()
+    spec.contract_size = 100000.0
+    margin_model = MarginModel(
+        leverage=33.0,
+        account_currency="USD",
+        margin_calculation_mode="0",
+        margin_rate=1.0,
+        margin_rate_source="custom_source",
+        account_currency_decimals=2
+    )
+    report = validate_calculations(client, "EURUSD", spec, margin_model)
+    assert report.margin_rate_source == "custom_source"

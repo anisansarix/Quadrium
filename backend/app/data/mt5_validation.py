@@ -1,4 +1,3 @@
-from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from pydantic import BaseModel
@@ -25,13 +24,16 @@ class MarginValidationDiff(BaseModel):
     volume: float
     price_open: float
     price_close: float
+    configured_margin_rate: float
+    implied_mt5_margin_rate: float | None
+    rate_diff_abs: float | None
+    rate_tolerance: float
     theoretical_margin_raw: float | None
     theoretical_margin_normalized: float | None
     mt5_margin: float | None
     diff_raw: float | None
     diff_normalized: float | None
     currency_precision: int
-    margin_rate: float
     tolerance: float
     passed: bool
     unsupported: bool = False
@@ -41,6 +43,7 @@ class MarginModel(BaseModel):
     account_currency: str
     margin_calculation_mode: str
     margin_rate: float
+    margin_rate_source: str
     account_currency_decimals: int
 
 class ValidationReport(BaseModel):
@@ -49,6 +52,7 @@ class ValidationReport(BaseModel):
     account_currency: str
     margin_calculation_mode: str
     margin_rate: float
+    margin_rate_source: str
     account_currency_decimals: int
     profit_diffs: list[ProfitValidationDiff]
     margin_diffs: list[MarginValidationDiff]
@@ -76,6 +80,7 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
             account_currency=margin_model.account_currency,
             margin_calculation_mode=margin_model.margin_calculation_mode,
             margin_rate=margin_model.margin_rate,
+            margin_rate_source=margin_model.margin_rate_source,
             account_currency_decimals=margin_model.account_currency_decimals,
             profit_diffs=[],
             margin_diffs=[],
@@ -110,6 +115,11 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
             ))
             
         mt5_margin = client.order_calc_margin(s["action"], symbol, s["volume"], s["price_open"])
+        
+        rate_tolerance = 1e-4
+        implied_rate = None
+        rate_diff = None
+        
         if margin_model.margin_calculation_mode not in ["FOREX", "0"]:
             theoretical_raw = None
             theoretical_norm = None
@@ -122,13 +132,23 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
             theoretical_raw = (s["price_open"] * spec.contract_size * s["volume"]) / margin_model.leverage * margin_model.margin_rate
             
             quant_str = "1." + "0" * margin_model.account_currency_decimals if margin_model.account_currency_decimals > 0 else "1"
+            from decimal import ROUND_HALF_UP, Decimal
             theoretical_norm = float(Decimal(str(theoretical_raw)).quantize(Decimal(quant_str), rounding=ROUND_HALF_UP))
             
             if mt5_margin is not None:
                 diff_raw = abs(theoretical_raw - mt5_margin)
                 diff_norm = abs(theoretical_norm - mt5_margin)
                 
-                passed = diff_norm <= tolerance
+                # Calculate implied rate: mt5_margin = (price_open * contract_size * volume) / leverage * implied_rate
+                # implied_rate = (mt5_margin * leverage) / (price_open * contract_size * volume)
+                implied_rate = (mt5_margin * margin_model.leverage) / (s["price_open"] * spec.contract_size * s["volume"])
+                rate_diff = abs(implied_rate - margin_model.margin_rate)
+                
+                # Check both monetary and rate equality
+                passed_monetary = diff_norm <= tolerance
+                passed_rate = rate_diff <= rate_tolerance
+                
+                passed = passed_monetary and passed_rate
                 unsupported = False
                 if not passed: all_passed = False
             else:
@@ -144,13 +164,16 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
                 volume=s["volume"],
                 price_open=s["price_open"],
                 price_close=s["price_close"],
+                configured_margin_rate=margin_model.margin_rate,
+                implied_mt5_margin_rate=implied_rate,
+                rate_diff_abs=rate_diff,
+                rate_tolerance=rate_tolerance,
                 theoretical_margin_raw=theoretical_raw,
                 theoretical_margin_normalized=theoretical_norm,
                 mt5_margin=mt5_margin,
                 diff_raw=diff_raw,
                 diff_normalized=diff_norm,
                 currency_precision=margin_model.account_currency_decimals,
-                margin_rate=margin_model.margin_rate,
                 tolerance=tolerance,
                 passed=passed,
                 unsupported=unsupported
@@ -162,6 +185,7 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
         account_currency=margin_model.account_currency,
         margin_calculation_mode=margin_model.margin_calculation_mode,
         margin_rate=margin_model.margin_rate,
+        margin_rate_source=margin_model.margin_rate_source,
         account_currency_decimals=margin_model.account_currency_decimals,
         profit_diffs=profit_diffs, 
         margin_diffs=margin_diffs, 

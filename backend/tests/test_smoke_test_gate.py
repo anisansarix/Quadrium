@@ -21,6 +21,7 @@ def setup_mocks(mock_val, mock_mgr, mock_downloader, mock_provider, all_passed=T
     
     mock_account = MagicMock()
     mock_account.currency = "USD"
+    mock_account.currency_digits = 2
     mock_account.balance = 25000.0
     mock_account.leverage = 33
     mock_account.company = "Broker"
@@ -63,6 +64,7 @@ def setup_mocks(mock_val, mock_mgr, mock_downloader, mock_provider, all_passed=T
         account_currency="USD",
         margin_calculation_mode="0",
         margin_rate=1.0,
+        margin_rate_source="configured_phase1_profile",
         account_currency_decimals=2,
         profit_diffs=[],
         margin_diffs=[],
