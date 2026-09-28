@@ -1,0 +1,15 @@
+{
+  "name": "quadrium-frontend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo 'Running minimal frontend dev server'",
+    "build": "echo 'Building minimal frontend'",
+    "lint": "echo 'Linting frontend'"
+  },
+  "dependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {}
+}

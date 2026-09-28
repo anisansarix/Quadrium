@@ -1,0 +1,37 @@
+import ast
+import os
+import pytest
+from pathlib import Path
+
+def check_imports(directory: str, forbidden_module: str, allowed_files: list = []):
+    violations = []
+    base_dir = Path(directory)
+    for filepath in base_dir.rglob("*.py"):
+        if filepath.name in allowed_files:
+            continue
+            
+        with open(filepath, "r", encoding="utf-8") as f:
+            try:
+                tree = ast.parse(f.read(), filename=str(filepath))
+            except SyntaxError:
+                continue
+                
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                for alias in node.names:
+                    if alias.name.split('.')[0] == forbidden_module:
+                        violations.append(str(filepath))
+            elif isinstance(node, ast.ImportFrom):
+                if node.module and node.module.split('.')[0] == forbidden_module:
+                    violations.append(str(filepath))
+                    
+    return violations
+
+def test_rl_cannot_import_mt5():
+    # Only the mt5 provider and mt5 execution adapter are allowed to import MetaTrader5
+    violations = check_imports("backend/app", "MetaTrader5", allowed_files=["mt5.py"])
+    assert not violations, f"Forbidden import of MetaTrader5 in: {violations}"
+
+def test_config_default_mode_is_research():
+    from app.core.config import settings
+    assert settings.env == "RESEARCH", "Default environment mode must be RESEARCH"
