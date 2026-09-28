@@ -29,11 +29,11 @@ class MT5Client(ABC):
         pass
         
     @abstractmethod
-    def copy_rates_range(self, symbol: str, timeframe: int, date_from: datetime.datetime, date_to: datetime.datetime) -> Any:
+    def copy_rates_range(self, symbol: str, timeframe: int, date_from: datetime.datetime | int, date_to: datetime.datetime | int) -> Any:
         pass
         
     @abstractmethod
-    def copy_ticks_range(self, symbol: str, date_from: datetime.datetime, date_to: datetime.datetime, flags: int) -> Any:
+    def copy_ticks_range(self, symbol: str, date_from: datetime.datetime | int, date_to: datetime.datetime | int, flags: int) -> Any:
         pass
         
     @abstractmethod
@@ -88,10 +88,10 @@ class RealMT5Client(MT5Client):
     def symbol_select(self, symbol: str, enable: bool) -> bool:
         return self.mt5.symbol_select(symbol, enable)
         
-    def copy_rates_range(self, symbol: str, timeframe: int, date_from: datetime.datetime, date_to: datetime.datetime) -> Any:
+    def copy_rates_range(self, symbol: str, timeframe: int, date_from: datetime.datetime | int, date_to: datetime.datetime | int) -> Any:
         return self.mt5.copy_rates_range(symbol, timeframe, date_from, date_to)
         
-    def copy_ticks_range(self, symbol: str, date_from: datetime.datetime, date_to: datetime.datetime, flags: int) -> Any:
+    def copy_ticks_range(self, symbol: str, date_from: datetime.datetime | int, date_to: datetime.datetime | int, flags: int) -> Any:
         return self.mt5.copy_ticks_range(symbol, date_from, date_to, flags)
         
     def account_info(self) -> Any:

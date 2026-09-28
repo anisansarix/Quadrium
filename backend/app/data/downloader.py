@@ -1,5 +1,5 @@
 import datetime
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import pandas as pd
 from pydantic import BaseModel
@@ -117,10 +117,16 @@ class MT5Downloader:
         spec = self.provider.get_instrument_spec(symbol)
         broker_meta = self.provider.get_broker_metadata()
         
-        source_metadata = {
+        source_metadata: dict[str, Any] = {
             "broker_metadata": broker_meta,
             "instrument_spec": spec.model_dump()
         }
+        
+        if hasattr(self.provider, '_time_profile') and self.provider._time_profile:
+            tp = self.provider._time_profile
+            source_metadata["source_time_basis"] = tp.source_time_basis
+            source_metadata["canonical_time_basis"] = "UTC"
+            source_metadata["time_profile_id"] = tp.profile_id
         
         manifest = self.dataset_manager.save_canonical(
             df=df_full,

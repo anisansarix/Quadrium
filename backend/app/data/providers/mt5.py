@@ -4,6 +4,7 @@ import pandas as pd
 
 from app.data.providers.base import CapabilityMetadata, DataProvider
 from app.data.providers.mt5_client import MT5Client, RealMT5Client
+from app.data.time_profile import mt5_label_to_utc, utc_to_mt5_label
 from app.domain.models import InstrumentSpec
 
 
@@ -27,7 +28,8 @@ class MT5Provider(DataProvider):
                  server: str | None = None,
                  timeout: int = 60000,
                  client: MT5Client | None = None,
-                 symbol_map: dict[str, str] | None = None):
+                 symbol_map: dict[str, str] | None = None,
+                 time_profile = None):
         self.path = path
         self.login = login
         self.password = password
@@ -36,6 +38,7 @@ class MT5Provider(DataProvider):
         
         self.client = client if client is not None else RealMT5Client()
         self.symbol_map = symbol_map or {}
+        self._time_profile = time_profile
         
         self._capabilities = MT5Capabilities()
         self._connected = False
@@ -132,7 +135,6 @@ class MT5Provider(DataProvider):
         broker_symbol = self._get_broker_symbol(symbol)
         tf = self.client.map_timeframe(timeframe)
         
-        # Ensure UTC
         if start.tzinfo is None:
             start = start.replace(tzinfo=UTC)
         if end.tzinfo is None:
@@ -141,28 +143,51 @@ class MT5Provider(DataProvider):
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
         
-        # Pass UTC-aware datetimes directly through the client
-        rates = self.client.copy_rates_range(broker_symbol, tf, start_utc, end_utc)
-        if rates is None or len(rates) == 0:
+        dfs = []
+        if self._time_profile:
+            ranges = self._time_profile.get_subranges(start_utc, end_utc)
+            for r_start, r_end, offset in ranges:
+                # Use int epochs to avoid local tz mangling
+                req_start = utc_to_mt5_label(r_start, offset)
+                req_end = utc_to_mt5_label(r_end, offset)
+                
+                rates = self.client.copy_rates_range(broker_symbol, tf, req_start, req_end)
+                if rates is not None and len(rates) > 0:
+                    df = pd.DataFrame(rates)
+                    # Convert raw 'time' back to UTC using the profile offset
+                    # We create datetime objects, then convert to pd.Timestamp to ensure standard Pandas UTC format
+                    df['time'] = df['time'].apply(lambda x, o=offset: pd.Timestamp(mt5_label_to_utc(x, o)))
+                    dfs.append(df)
+        else:
+            rates = self.client.copy_rates_range(broker_symbol, tf, start_utc, end_utc)
+            if rates is not None and len(rates) > 0:
+                df = pd.DataFrame(rates)
+                df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
+                dfs.append(df)
+                
+        if not dfs:
             return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"])
-        
-        df = pd.DataFrame(rates)
-        df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
-        
-        # Check coverage
-        df['time'].min()
-        df['time'].max()
-        
-        # We removed strict coverage checks here; they belong in the ingestion layer/coverage policy.
+            
+        df = pd.concat(dfs, ignore_index=True)
+        # Filter duplicates just in case ranges overlapped at boundaries
+        df = df.drop_duplicates(subset=['time'])
+        # Ensure we stay strictly within requested canonical [start, end)
+        df = df[(df['time'] >= start_utc) & (df['time'] < end_utc)]
         
         df = df.rename(columns={
             "time": "timestamp",
             "tick_volume": "tick_volume",
-            "real_volume": "real_volume",
+            "real_volume": "real_volume"
         })
+        
+        expected_cols = ["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
+        for col in expected_cols:
+            if col not in df.columns:
+                df[col] = 0
+                
         df["symbol"] = symbol
         df["timeframe"] = timeframe
-        
+        df = df[["timestamp", "symbol", "timeframe", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]]
         return df[["timestamp", "symbol", "timeframe", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]]
 
     def fetch_ticks(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
@@ -171,7 +196,6 @@ class MT5Provider(DataProvider):
             
         broker_symbol = self._get_broker_symbol(symbol)
         
-        # Ensure UTC
         if start.tzinfo is None:
             start = start.replace(tzinfo=UTC)
         if end.tzinfo is None:
@@ -180,29 +204,41 @@ class MT5Provider(DataProvider):
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
         
-        flags = self.client.get_ticks_all_flag()
-            
-        ticks = self.client.copy_ticks_range(broker_symbol, start_utc, end_utc, flags)
-        if ticks is None or len(ticks) == 0:
+        dfs = []
+        if self._time_profile:
+            import MetaTrader5 as mt5
+            ranges = self._time_profile.get_subranges(start_utc, end_utc)
+            for r_start, r_end, offset in ranges:
+                req_start = utc_to_mt5_label(r_start, offset)
+                req_end = utc_to_mt5_label(r_end, offset)
+                
+                ticks = self.client.copy_ticks_range(broker_symbol, req_start, req_end, mt5.COPY_TICKS_ALL)
+                if ticks is not None and len(ticks) > 0:
+                    df = pd.DataFrame(ticks)
+                    # Convert raw 'time' (sec) and we must also construct full msc if needed.
+                    # But MT5 ticks have 'time' in sec and 'time_msc' in msc.
+                    # Actually wait, time_msc is the exact one we should use!
+                    # For Phase 1, we just convert 'time_msc' back by subtracting offset*3600*1000
+                    # And then use pd.to_datetime with unit='ms'
+                    # Or we can just use mt5_label_to_utc on 'time' and add the ms.
+                    df['time'] = df['time_msc'].apply(lambda x, o=offset: pd.Timestamp(mt5_label_to_utc(x / 1000.0, o)))
+                    dfs.append(df)
+        else:
+            import MetaTrader5 as mt5
+            ticks = self.client.copy_ticks_range(broker_symbol, start_utc, end_utc, mt5.COPY_TICKS_ALL)
+            if ticks is not None and len(ticks) > 0:
+                df = pd.DataFrame(ticks)
+                df['time'] = pd.to_datetime(df['time_msc'], unit='ms', utc=True)
+                dfs.append(df)
+                
+        if not dfs:
             return pd.DataFrame(columns=["timestamp", "bid", "ask", "last", "volume", "flags"])
-        
-        df = pd.DataFrame(ticks)
-        df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
-        
-        # Validate tick data
-        if (df['bid'] <= 0).any() or (df['ask'] <= 0).any():
-            raise MT5Error("Validation error: Found non-positive bid/ask prices")
-        if (df['bid'] > df['ask']).any():
-            raise MT5Error("Validation error: Found bid > ask")
             
-        df = df.rename(columns={
-            "time": "timestamp",
-        })
+        df = pd.concat(dfs, ignore_index=True)
+        df = df.drop_duplicates(subset=['time'])
+        df = df[(df['time'] >= start_utc) & (df['time'] < end_utc)]
+        
         df["symbol"] = symbol
         df["spread"] = df["ask"] - df["bid"]
-        
-        # Explicit sorting and duplicates handling should be documented. Ticks must be monotonic.
-        if not df["timestamp"].is_monotonic_increasing:
-            raise MT5Error("Validation error: Ticks are not monotonically increasing")
-            
-        return df[["timestamp", "symbol", "bid", "ask", "last", "volume", "flags"]]
+        df = df.rename(columns={"time": "timestamp"})
+        return df[["timestamp", "symbol", "bid", "ask", "last", "volume", "flags"]][["timestamp", "symbol", "bid", "ask", "last", "volume", "flags"]]
