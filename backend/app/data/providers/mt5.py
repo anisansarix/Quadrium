@@ -1,11 +1,10 @@
-from datetime import datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
 
 import pandas as pd
 
 from app.data.providers.base import CapabilityMetadata, DataProvider
-from app.domain.models import InstrumentSpec
 from app.data.providers.mt5_client import MT5Client, RealMT5Client
+from app.domain.models import InstrumentSpec
 
 
 class MT5Capabilities(CapabilityMetadata):
@@ -140,12 +139,12 @@ class MT5Provider(DataProvider):
         
         # Ensure UTC
         if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
+            start = start.replace(tzinfo=UTC)
         if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
+            end = end.replace(tzinfo=UTC)
             
-        start_utc = start.astimezone(timezone.utc)
-        end_utc = end.astimezone(timezone.utc)
+        start_utc = start.astimezone(UTC)
+        end_utc = end.astimezone(UTC)
         
         # In MT5, copy_rates_range takes naive datetimes but assumes they are in UTC
         rates = self.client.copy_rates_range(broker_symbol, tf, start_utc.replace(tzinfo=None), end_utc.replace(tzinfo=None))
@@ -193,12 +192,12 @@ class MT5Provider(DataProvider):
         
         # Ensure UTC
         if start.tzinfo is None:
-            start = start.replace(tzinfo=timezone.utc)
+            start = start.replace(tzinfo=UTC)
         if end.tzinfo is None:
-            end = end.replace(tzinfo=timezone.utc)
+            end = end.replace(tzinfo=UTC)
             
-        start_utc = start.astimezone(timezone.utc)
-        end_utc = end.astimezone(timezone.utc)
+        start_utc = start.astimezone(UTC)
+        end_utc = end.astimezone(UTC)
         
         try:
             import MetaTrader5 as mt5

@@ -1,12 +1,11 @@
 import datetime
-from pathlib import Path
 
 import pandas as pd
 
 from app.data.datasets import DatasetManager
+from app.data.gaps import GapReport, analyze_gaps
 from app.data.providers.mt5 import MT5Provider
 from app.data.validation import validate_dataframe
-from app.data.gaps import analyze_gaps, GapReport
 
 
 class MT5Downloader:

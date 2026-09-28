@@ -1,6 +1,9 @@
-import duckdb
 from pathlib import Path
+
+import duckdb
+
 from app.domain.models import DatasetManifest
+
 
 class DatasetCatalog:
     def __init__(self, db_path: Path):

@@ -71,7 +71,12 @@ class FakeMT5Client(MT5Client):
         start_ts = int(date_from.timestamp())
         end_ts = int(date_to.timestamp())
         filtered = [r for r in self.rates if start_ts <= r[0] <= end_ts]
-        return np.array(filtered) if filtered else None
+        
+        if not filtered:
+            return None
+            
+        dt = np.dtype([('time', '<i8'), ('open', '<f8'), ('high', '<f8'), ('low', '<f8'), ('close', '<f8'), ('tick_volume', '<u8'), ('spread', '<i4'), ('real_volume', '<u8')])
+        return np.array(filtered, dtype=dt)
         
     def copy_ticks_range(self, symbol: str, date_from: datetime.datetime, date_to: datetime.datetime, flags: int) -> Any:
         if symbol not in self.symbols:
@@ -85,7 +90,12 @@ class FakeMT5Client(MT5Client):
         start_ts = int(date_from.timestamp())
         end_ts = int(date_to.timestamp())
         filtered = [t for t in self.ticks if start_ts <= t[0] <= end_ts]
-        return np.array(filtered) if filtered else None
+        
+        if not filtered:
+            return None
+            
+        dt = np.dtype([('time', '<i8'), ('bid', '<f8'), ('ask', '<f8'), ('last', '<f8'), ('volume', '<u8'), ('flags', '<u4')])
+        return np.array(filtered, dtype=dt)
         
     def account_info(self) -> Any:
         return FakeAccountInfo(currency=self.account_currency)

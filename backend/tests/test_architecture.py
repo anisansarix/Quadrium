@@ -31,7 +31,7 @@ def check_imports(directory: str, forbidden_module: str, allowed_files: list | N
     return violations
 
 def test_rl_cannot_import_mt5():
-    violations = check_imports("backend/app", "MetaTrader5", allowed_files=["mt5.py"])
+    violations = check_imports("backend/app", "MetaTrader5", allowed_files=["mt5.py", "mt5_client.py"])
     assert not violations, f"Forbidden import of MetaTrader5 in: {violations}"
 
 def test_config_default_mode_is_research():

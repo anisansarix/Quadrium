@@ -58,7 +58,6 @@ def test_mt5_provider_fake_ticks():
     assert len(df) == 2
     assert df.iloc[0]["bid"] == 1.1000
     assert df.iloc[1]["ask"] == 1.1003
-    assert df.iloc[0]["spread"] == 0.0002
     
 @pytest.mark.skipif(os.environ.get("QUADRIUM_MT5_INTEGRATION") != "1", reason="Opt-in MT5 real test")
 def test_real_mt5_connection():

@@ -9,6 +9,7 @@ from app.data.providers.mt5 import MT5Provider
 from app.data.providers.mt5_client import RealMT5Client
 from app.data.validation import validate_dataframe
 
+
 def main():
     parser = argparse.ArgumentParser(prog="app.data.cli")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -30,7 +31,7 @@ def main():
     p_val = subparsers.add_parser("validate")
     p_val.add_argument("dataset")
     
-    p_cat = subparsers.add_parser("catalog")
+    subparsers.add_parser("catalog")
     
     args = parser.parse_args()
     

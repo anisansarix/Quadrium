@@ -1,7 +1,11 @@
-from pydantic import BaseModel
+
 from typing import Any
+
+from pydantic import BaseModel
+
 from app.data.providers.mt5_client import MT5Client
 from app.domain.models import InstrumentSpec
+
 
 class ValidationDiff(BaseModel):
     action: str
@@ -21,7 +25,7 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec) 
     profit_diffs = []
     margin_diffs = []
     
-    scenarios = [
+    scenarios: list[dict[str, Any]] = [
         {"action": 0, "volume": 1.0, "price_open": 1.1000, "price_close": 1.1050}, # BUY
         {"action": 1, "volume": 1.0, "price_open": 1.1000, "price_close": 1.0950}, # SELL
         {"action": 0, "volume": 0.5, "price_open": 1.1000, "price_close": 1.1020}

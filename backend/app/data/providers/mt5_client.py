@@ -57,7 +57,7 @@ class RealMT5Client(MT5Client):
             raise ImportError("MetaTrader5 package is missing. Install with 'uv sync --all-extras'")
             
     def initialize(self, path: str | None = None, login: int | None = None, password: str | None = None, server: str | None = None, timeout: int = 60000) -> bool:
-        kwargs = {}
+        kwargs: dict[str, Any] = {}
         if path is not None: kwargs["path"] = path
         if login is not None: kwargs["login"] = login
         if password is not None: kwargs["password"] = password

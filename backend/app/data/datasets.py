@@ -1,12 +1,14 @@
 import hashlib
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 import pandas as pd
+
 from app.domain.models import DatasetManifest
+
 
 def hash_metadata(metadata: dict[str, Any]) -> str:
     serialized = json.dumps(metadata, sort_keys=True)
@@ -35,7 +37,7 @@ class DatasetManager:
         self.manifest_dir.mkdir(parents=True, exist_ok=True)
 
     def save_raw(self, df: pd.DataFrame, source: str, symbol: str, timeframe: str) -> Path:
-        timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp_str = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         filename = f"{source}_{symbol}_{timeframe}_{timestamp_str}.parquet"
         path = self.raw_dir / filename
         temp_path = path.with_suffix(".tmp")
@@ -85,7 +87,7 @@ class DatasetManager:
             dataset_hash=ds_hash,
             source_metadata_hash=meta_hash,
             source_metadata=source_metadata,
-            fetch_timestamp=datetime.now()
+            fetch_timestamp=datetime.now(UTC)
         )
         
         manifest_path = self.manifest_dir / f"{dataset_id}.json"
