@@ -24,7 +24,7 @@ def test_full_deterministic_research_flow() -> None:
     for i, p in enumerate(prices):
         data.append(Quote(timestamp=base_time + timedelta(minutes=i), symbol="EURUSD", bid=p, ask=p+0.0002))
         
-    df = pd.DataFrame([{
+    pd.DataFrame([{
         "timestamp": q.timestamp, 
         "close": q.bid, 
         "symbol": q.symbol
@@ -54,11 +54,14 @@ def test_full_deterministic_research_flow() -> None:
     
     trade_ledger = []
     
+    from app.strategies.history import RollingHistory
+    history = RollingHistory()
+    
     for i in range(len(data)):
         q = data[i]
         sim.update_quote(q)
         
-        history = df.iloc[:i+1]
+        history.append(q.bid)
         
         target_pos = strategy.next(q, history)
         
@@ -89,8 +92,8 @@ def test_full_deterministic_research_flow() -> None:
     }
     
     spec_data = ExperimentSpec(
-        git_sha="synthetic-golden-v1", dataset_hash="synthetic-golden-v1", feature_version="1.0", simulator_version="1.0",
-        risk_policy_id="test-pol", risk_policy_version="1.0", environment_version="1.0", seed=42,
+        git_sha="synthetic-test", dataset_hash="synthetic-golden-v1", feature_version="none", simulator_version="deterministic-v1",
+        risk_policy_id="test-pol", risk_policy_version="1.0", environment_version="quote-v1", seed=0,
         train_window={}, validation_window={}, test_window={"start": data[0].timestamp, "end": data[-1].timestamp},
         holdout_window={}, execution_cost_profile="synthetic-default"
     )

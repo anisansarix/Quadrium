@@ -1,7 +1,4 @@
-from typing import Any
 from uuid import uuid4
-
-import pandas as pd
 
 from app.core.decision_pipeline import DecisionPipeline
 from app.domain.models import (
@@ -13,6 +10,7 @@ from app.domain.models import (
     RiskContext,
     RiskDecision,
     RiskPolicy,
+    RunMetadata,
     SimulationEvent,
 )
 from app.evaluation.ledger import EquityRecord, ExecutionRecord, Ledger
@@ -40,14 +38,14 @@ class BacktestRunner:
         self.prev_commission = 0.0
         self.prev_swap = 0.0
 
-    def _process_simulation_event(self, event: SimulationEvent, quote: Quote, side_hint: str = "SELL") -> None:
+    def _process_simulation_event(self, event: SimulationEvent, quote: Quote) -> None:
         for fill in event.fills:
             self.ledger.append_execution(ExecutionRecord(
                 order_id=fill.order_id,
                 symbol=fill.symbol,
-                side=side_hint,
+                side=fill.side.value,
                 volume=fill.volume,
-                requested_price=quote.ask if side_hint == "BUY" else quote.bid,
+                requested_price=quote.ask if fill.side.value == "BUY" else quote.bid,
                 fill_price=fill.price,
                 timestamp=fill.timestamp,
                 realized_pnl=fill.realized_pnl,
@@ -59,29 +57,29 @@ class BacktestRunner:
         for rd in event.risk_events:
             self.risk_events.append(rd)
 
-    def run(self, data: list[Quote], spec: InstrumentSpec, metadata: dict[str, Any] | None = None) -> BacktestResult:
+    def run(self, data: list[Quote], spec: InstrumentSpec, metadata: RunMetadata | None = None) -> BacktestResult:
+        if metadata is None:
+            metadata = RunMetadata()
+            
         self.simulator.set_instrument(spec)
-        history_records: list[dict[str, Any]] = []
         last_date = None
         
-        metadata = metadata or {}
-        git_sha = metadata.get("git_sha", "unknown")
-        dataset_hash = metadata.get("dataset_hash", "unknown")
-        feature_version = metadata.get("feature_version", "1.0")
-        simulator_version = metadata.get("simulator_version", "1.0")
-        environment_version = metadata.get("environment_version", "1.0")
-        seed = metadata.get("seed", 0)
-        execution_cost_profile = metadata.get("execution_cost_profile", "default")
+        git_sha = metadata.git_sha
+        dataset_hash = metadata.dataset_hash
+        feature_version = metadata.feature_version
+        simulator_version = metadata.simulator_version
+        environment_version = metadata.environment_version
+        seed = metadata.seed
+        execution_cost_profile = metadata.execution_cost_profile
+        
+        from app.strategies.history import RollingHistory
+        history = RollingHistory()
         
         for q in data:
             sim_event = self.simulator.update_quote(q)
             self._process_simulation_event(sim_event, q)
             
-            history_records.append({
-                "timestamp": q.timestamp,
-                "close": q.bid,
-                "symbol": q.symbol
-            })
+            history.append(q.bid)
             
             self.equity_peak = max(self.equity_peak, self.simulator.equity)
             current_date = q.timestamp.date()
@@ -99,8 +97,7 @@ class BacktestRunner:
                 current_time=q.timestamp
             )
             
-            history_df = pd.DataFrame(history_records)
-            target = self.strategy.next(q, history_df)
+            target = self.strategy.next(q, history)
             
             if target:
                 approved_order, decision = self.pipeline.process(target, context, self.policy)
@@ -113,7 +110,7 @@ class BacktestRunner:
                     
                     if res and res.success:
                         sim_event2 = SimulationEvent(timestamp=q.timestamp, fills=res.fills, closed_trades=res.closed_trades)
-                        self._process_simulation_event(sim_event2, q, side_hint=approved_order.intent.side.value if approved_order else "SELL")
+                        self._process_simulation_event(sim_event2, q)
                             
             # Calculate Deltas for EquityRecord
             realized_pnl_delta = self.simulator.balance - self.prev_balance

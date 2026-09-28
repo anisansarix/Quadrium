@@ -1,13 +1,14 @@
 from abc import ABC, abstractmethod
 
-import pandas as pd
+import numpy as np
 
 from app.domain.models import Quote, TargetPosition
+from app.strategies.history import RollingHistory
 
 
 class Strategy(ABC):
     @abstractmethod
-    def next(self, current_quote: Quote, history: pd.DataFrame) -> TargetPosition | None:
+    def next(self, current_quote: Quote, history: RollingHistory) -> TargetPosition | None:
         pass
 
 class SMATrend(Strategy):
@@ -17,12 +18,13 @@ class SMATrend(Strategy):
         self.slow_period = slow_period
         self.target_weight = target_weight
 
-    def next(self, current_quote: Quote, history: pd.DataFrame) -> TargetPosition | None:
-        if len(history) < self.slow_period:
+    def next(self, current_quote: Quote, history: RollingHistory) -> TargetPosition | None:
+        if history.count < self.slow_period:
             return None
             
-        fast_sma = history['close'].rolling(window=self.fast_period).mean().iloc[-1]
-        slow_sma = history['close'].rolling(window=self.slow_period).mean().iloc[-1]
+        closes = history.get_closes()
+        fast_sma = np.mean(closes[-self.fast_period:])
+        slow_sma = np.mean(closes[-self.slow_period:])
         
         if fast_sma > slow_sma:
             return TargetPosition(symbol=self.symbol, target_weight=self.target_weight)
@@ -35,5 +37,5 @@ class NoTrade(Strategy):
     def __init__(self, symbol: str):
         self.symbol = symbol
         
-    def next(self, current_quote: Quote, history: pd.DataFrame) -> TargetPosition | None:
+    def next(self, current_quote: Quote, history: RollingHistory) -> TargetPosition | None:
         return TargetPosition(symbol=self.symbol, target_weight=0.0)

@@ -186,9 +186,22 @@ class ApprovedOrder(BaseModel):
     risk_decision: RiskDecision
     timestamp: datetime
 
+class ExecutionRole(str, Enum):
+    ENTRY = "ENTRY"
+    INCREASE = "INCREASE"
+    REDUCE = "REDUCE"
+    CLOSE = "CLOSE"
+    REVERSAL = "REVERSAL"
+    SL = "SL"
+    TP = "TP"
+    FLATTEN = "FLATTEN"
+
 class Fill(BaseModel):
     order_id: str
+    position_id: UUID | None = None
     symbol: str
+    side: OrderSide
+    execution_role: ExecutionRole
     volume: float
     price: float
     timestamp: datetime
@@ -233,6 +246,15 @@ class DatasetManifest(BaseModel):
     file_hash: str
     source_metadata: dict[str, Any]
     fetch_timestamp: datetime
+
+class RunMetadata(BaseModel):
+    git_sha: str = "unknown"
+    dataset_hash: str = "unknown"
+    feature_version: str = "1.0"
+    simulator_version: str = "1.0"
+    environment_version: str = "1.0"
+    seed: int = 0
+    execution_cost_profile: str = "default"
 
 class ExperimentSpec(BaseModel):
     git_sha: str

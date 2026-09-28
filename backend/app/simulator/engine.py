@@ -7,6 +7,7 @@ from app.domain.models import (
     ApprovedOrder,
     ClosedTrade,
     ExecutionResult,
+    ExecutionRole,
     Fill,
     InstrumentSpec,
     OrderSide,
@@ -172,9 +173,17 @@ class SimulatorEngine:
             entry_comm = self.commission_model.calculate_commission(order.intent.symbol, remaining_vol)
             self.balance -= entry_comm # Realized entry cost
             
+            pos_id = uuid4()
+            exec_role = ExecutionRole.REVERSAL if closed_trades else (
+                ExecutionRole.INCREASE if any(p.side == order.intent.side and p.symbol == order.intent.symbol for p in self.positions if p.state == PositionState.OPEN) else ExecutionRole.ENTRY
+            )
+            
             fill = Fill(
                 order_id=str(uuid4()),
+                position_id=pos_id,
                 symbol=order.intent.symbol,
+                side=order.intent.side,
+                execution_role=exec_role,
                 volume=remaining_vol,
                 price=fill_price,
                 timestamp=self.current_time or datetime.now(UTC),
@@ -184,7 +193,7 @@ class SimulatorEngine:
             )
             
             pos = Position(
-                id=uuid4(),
+                id=pos_id,
                 symbol=order.intent.symbol,
                 side=order.intent.side,
                 volume=remaining_vol,
@@ -252,7 +261,10 @@ class SimulatorEngine:
                 )
                 f = Fill(
                     order_id=ct.trade_id,
+                    position_id=p.id,
                     symbol=p.symbol,
+                    side=OrderSide.SELL if p.side == OrderSide.BUY else OrderSide.BUY,
+                    execution_role=ExecutionRole.REDUCE,
                     volume=amount,
                     price=close_price,
                     timestamp=close_time,
@@ -307,9 +319,20 @@ class SimulatorEngine:
                     holding_seconds=holding_secs,
                     exit_reason=reason
                 )
+                role_map = {
+                    "SL": ExecutionRole.SL,
+                    "TP": ExecutionRole.TP,
+                    "FLATTEN": ExecutionRole.FLATTEN,
+                    "FLATTEN_AND_FREEZE": ExecutionRole.FLATTEN
+                }
+                exec_role = role_map.get(reason, ExecutionRole.CLOSE)
+                
                 f = Fill(
                     order_id=str(p.id),
+                    position_id=p.id,
                     symbol=p.symbol,
+                    side=OrderSide.SELL if p.side == OrderSide.BUY else OrderSide.BUY,
+                    execution_role=exec_role,
                     volume=p.volume,
                     price=cp,
                     timestamp=p.close_timestamp,
