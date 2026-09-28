@@ -109,13 +109,12 @@ def test_end_to_end_ingestion():
     catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
     
     client = FakeMT5Client()
-    # fake bars over 2 days (Jan 1 is Sunday, Jan 2 is Monday)
-    client.rates = [
-        (1672531200, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100),
-        (1672617600, 1.1005, 1.1020, 1.1000, 1.1015, 150, 12, 150),
-        (1672703940, 1.1005, 1.1020, 1.1000, 1.1015, 150, 12, 150), # Jan 2 23:59
-        (1672704000, 1.1005, 1.1020, 1.1000, 1.1015, 150, 12, 150) # Jan 3 00:00
-    ]
+    # Generate full Jan 2 (Monday) M1 bars
+    rates = []
+    base_ts = 1672617600 # 2023-01-02 00:00:00
+    for i in range(1440): # 1440 minutes in a day
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
     provider = MT5Provider(client=client)
     provider.connect()
     
@@ -137,10 +136,77 @@ def test_end_to_end_ingestion():
     
     # Validate dataframe
     df = manager.load_canonical(artifact.dataset_id)
-    assert len(df) == 4
+    assert len(df) == 1440
+    assert artifact.quality_report.quality_status == "PASS"
     assert df["symbol"].iloc[0] == "EURUSD"
     assert df["timeframe"].iloc[0] == "M1"
     assert df["timestamp"].dt.tz is not None # UTC
     
+    import shutil
+    shutil.rmtree(temp_dir)
+
+def test_ingestion_fails_internal_gap():
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    temp_dir = Path("test_ingest_gap")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    rates = []
+    base_ts = 1672617600
+    for i in range(1440):
+        if 100 <= i < 110:
+            continue # Drop 10 bars
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    workflow = MT5Downloader(provider, manager, catalog)
+    start = datetime(2023, 1, 1, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    with pytest.raises(ValueError, match="Dataset ingestion failed quality checks"):
+        workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+        
+    import shutil
+    shutil.rmtree(temp_dir)
+
+def test_ingestion_fails_duplicate():
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    temp_dir = Path("test_ingest_dup")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    rates = []
+    base_ts = 1672617600
+    for i in range(1440):
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+        if i == 500:
+            rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    workflow = MT5Downloader(provider, manager, catalog)
+    start = datetime(2023, 1, 1, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    with pytest.raises(ValueError, match="Duplicate timestamps found"):
+        workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+        
     import shutil
     shutil.rmtree(temp_dir)

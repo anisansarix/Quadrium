@@ -20,11 +20,19 @@ class ValidationDiff(BaseModel):
 
 class ValidationReport(BaseModel):
     symbol: str
+    leverage: float
+    account_currency: str
+    margin_calculation_mode: str
     profit_diffs: list[ValidationDiff]
     margin_diffs: list[ValidationDiff]
     all_passed: bool
 
-def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, leverage: float = 100.0) -> ValidationReport:
+class MarginModel(BaseModel):
+    leverage: float
+    account_currency: str
+    margin_calculation_mode: str
+
+def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, margin_model: MarginModel) -> ValidationReport:
     profit_diffs = []
     margin_diffs = []
     
@@ -67,7 +75,7 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
             ))
             
         mt5_margin = client.order_calc_margin(s["action"], symbol, s["volume"], s["price_open"])
-        quad_margin = (s["price_open"] * spec.contract_size * s["volume"]) / leverage
+        quad_margin = (s["price_open"] * spec.contract_size * s["volume"]) / margin_model.leverage
         
         if mt5_margin is not None:
             diff_abs = abs(quad_margin - mt5_margin)
@@ -88,4 +96,12 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
                 passed=passed
             ))
             
-    return ValidationReport(symbol=symbol, profit_diffs=profit_diffs, margin_diffs=margin_diffs, all_passed=all_passed)
+    return ValidationReport(
+        symbol=symbol, 
+        leverage=margin_model.leverage,
+        account_currency=margin_model.account_currency,
+        margin_calculation_mode=margin_model.margin_calculation_mode,
+        profit_diffs=profit_diffs, 
+        margin_diffs=margin_diffs, 
+        all_passed=all_passed
+    )

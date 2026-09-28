@@ -68,11 +68,13 @@ def test_hash_dataframe_is_canonical():
     # 1. Order independence
     df1 = pd.DataFrame({
         'timestamp': [datetime(2023, 1, 1, 10, tzinfo=UTC), datetime(2023, 1, 1, 11, tzinfo=UTC)],
+        'symbol': ['EURUSD', 'EURUSD'], 'timeframe': ['M1', 'M1'],
         'open': [1.0, 2.0], 'high': [1.0, 2.0], 'low': [1.0, 2.0], 'close': [1.0, 2.0],
     })
     
     df2 = pd.DataFrame({
         'timestamp': [datetime(2023, 1, 1, 11, tzinfo=UTC), datetime(2023, 1, 1, 10, tzinfo=UTC)],
+        'symbol': ['EURUSD', 'EURUSD'], 'timeframe': ['M1', 'M1'],
         'open': [2.0, 1.0], 'high': [2.0, 1.0], 'low': [2.0, 1.0], 'close': [2.0, 1.0],
     })
     
@@ -81,10 +83,21 @@ def test_hash_dataframe_is_canonical():
     # 2. Value dependence
     df3 = pd.DataFrame({
         'timestamp': [datetime(2023, 1, 1, 10, tzinfo=UTC), datetime(2023, 1, 1, 11, tzinfo=UTC)],
+        'symbol': ['EURUSD', 'EURUSD'], 'timeframe': ['M1', 'M1'],
         'open': [1.0, 3.0], 'high': [1.0, 2.0], 'low': [1.0, 2.0], 'close': [1.0, 2.0],
     })
     assert hash_dataframe(df1) != hash_dataframe(df3)
     
     # 3. Schema version dependence
     assert hash_dataframe(df1, schema_version="1.0") != hash_dataframe(df1, schema_version="2.0")
+
+    # 4. Symbol dependence
+    df_gbp = df1.copy()
+    df_gbp['symbol'] = 'GBPUSD'
+    assert hash_dataframe(df1) != hash_dataframe(df_gbp)
+
+    # 5. Timeframe dependence
+    df_m5 = df1.copy()
+    df_m5['timeframe'] = 'M5'
+    assert hash_dataframe(df1) != hash_dataframe(df_m5)
 

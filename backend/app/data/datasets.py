@@ -39,17 +39,18 @@ def hash_dataframe(df: pd.DataFrame, schema_version: str = "1.0") -> str:
     df_clean = df_clean.sort_values(by="timestamp").reset_index(drop=True)
     
     # Sort columns canonically
-    bar_cols = ["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
-    tick_cols = ["timestamp", "bid", "ask", "last", "volume", "flags"]
+    bar_cols = ["timestamp", "symbol", "timeframe", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
+    tick_cols = ["timestamp", "symbol", "bid", "ask", "last", "volume", "flags"]
     
-    if all(c in df_clean.columns for c in ["open", "high", "low", "close"]):
-        # It's a bars dataframe
+    if "open" in df_clean.columns:
         expected = [c for c in bar_cols if c in df_clean.columns]
-    elif all(c in df_clean.columns for c in ["bid", "ask", "flags"]):
-        # It's a ticks dataframe
+        dataset_type = "bars"
+    elif "bid" in df_clean.columns:
         expected = [c for c in tick_cols if c in df_clean.columns]
+        dataset_type = "ticks"
     else:
         expected = sorted(df_clean.columns)
+        dataset_type = "unknown"
         
     df_clean = df_clean[expected]
     
@@ -68,8 +69,13 @@ def hash_dataframe(df: pd.DataFrame, schema_version: str = "1.0") -> str:
     df_clean.to_parquet(buf, index=False)
     
     hasher = hashlib.sha256()
-    # Incorporate schema version into the hash
-    hasher.update(f"V{schema_version}|".encode())
+    # Incorporate schema version and dataset metadata into the hash
+    symbol = df_clean['symbol'].iloc[0] if 'symbol' in df_clean.columns and not df_clean.empty else 'unknown'
+    timeframe = df_clean['timeframe'].iloc[0] if 'timeframe' in df_clean.columns and not df_clean.empty else 'unknown'
+    
+    hash_algorithm_version = "1.0"
+    header = f"V{schema_version}|V{hash_algorithm_version}|{dataset_type}|{symbol}|{timeframe}|"
+    hasher.update(header.encode())
     hasher.update(buf.getvalue())
     return hasher.hexdigest()
 
