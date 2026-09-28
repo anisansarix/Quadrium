@@ -29,6 +29,9 @@ dev = [
     "ruff>=0.3.2",
     "mypy>=1.9.0"
 ]
+mt5 = [
+    "MetaTrader5>=5.0.45"
+]
 
 [tool.ruff]
 line-length = 100

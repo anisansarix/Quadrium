@@ -235,6 +235,7 @@ class ExecutionResult(BaseModel):
     closed_trades: list[ClosedTrade] = []
 
 class DatasetManifest(BaseModel):
+    dataset_id: str
     source: str
     broker: str
     symbol: str
@@ -244,6 +245,8 @@ class DatasetManifest(BaseModel):
     row_count: int
     schema_version: str
     file_hash: str
+    dataset_hash: str
+    source_metadata_hash: str
     source_metadata: dict[str, Any]
     fetch_timestamp: datetime
 
