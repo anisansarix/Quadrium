@@ -32,3 +32,7 @@ class DataProvider(ABC):
     @abstractmethod
     def fetch_bars(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:
         pass
+
+    @abstractmethod
+    def fetch_ticks(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
+        pass

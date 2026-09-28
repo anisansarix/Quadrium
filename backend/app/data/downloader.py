@@ -21,6 +21,30 @@ class DatasetArtifact(BaseModel):
     gap_report: GapReport
     quality_report: DataQualityReport
 
+def diagnose_missing_bars(
+    provider: DataProvider,
+    symbol: str,
+    missing_timestamps: list[datetime.datetime]
+) -> list[dict]:
+    results = []
+    for m_ts in missing_timestamps:
+        end_m = m_ts + datetime.timedelta(minutes=1)
+        ticks = provider.fetch_ticks(symbol, m_ts, end_m)
+        ticks = ticks[(ticks['timestamp'] >= m_ts) & (ticks['timestamp'] < end_m)]
+        tc = len(ticks)
+        first_t = ticks['timestamp'].min() if tc > 0 else None
+        last_t = ticks['timestamp'].max() if tc > 0 else None
+        cls = "NO_TICKS" if tc == 0 else "TICKS_PRESENT_BAR_MISSING"
+        results.append({
+            "minute_start": m_ts,
+            "minute_end": end_m,
+            "tick_count": tc,
+            "first_tick_utc": first_t,
+            "last_tick_utc": last_t,
+            "classification": cls
+        })
+    return results
+
 class MT5Downloader:
     def __init__(self, provider: DataProvider, dataset_manager: DatasetManager, catalog: DatasetCatalog, calendar: "DataCalendar"):
         self.provider = provider
@@ -98,6 +122,16 @@ class MT5Downloader:
             duplicate_bars=int(duplicates_count),
             quality_status=cast(Literal["PASS", "WARNING", "FAIL"], quality_status)
         )
+        
+        # --- DIAGNOSTIC ---
+        if timeframe == "M1" and quality_report.unexpected_missing_bars > 0:
+            df_ts = set(df_full['timestamp'].dt.to_pydatetime()) if not df_full.empty else set()
+            missing_ts = [ts for ts in _expected_timestamps if ts not in df_ts]
+            print(f"DIAGNOSTIC: Missing M1 timestamps: {missing_ts}")
+            diag_results = diagnose_missing_bars(self.provider, symbol, missing_ts)
+            for res in diag_results:
+                print(f"DIAGNOSTIC GAP: minute_start={res['minute_start']} minute_end={res['minute_end']} tick_count={res['tick_count']} first_tick_utc={res['first_tick_utc']} last_tick_utc={res['last_tick_utc']} classification={res['classification']}")
+        # ------------------
         
         if quality_status == "FAIL":
             raise ValueError(f"Dataset ingestion failed quality checks: {quality_report.model_dump_json()}")

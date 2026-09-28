@@ -62,7 +62,7 @@ class RealMT5Client(MT5Client):
             import MetaTrader5 as mt5
             self.mt5 = mt5
         except ImportError:
-            raise ImportError("MetaTrader5 package is missing. Install with 'uv sync --all-extras'")
+            raise ImportError("MetaTrader5 package is missing. Install with 'uv sync --extra mt5'")
             
     def initialize(self, path: str | None = None, login: int | None = None, password: str | None = None, server: str | None = None, timeout: int = 60000) -> bool:
         kwargs: dict[str, Any] = {}

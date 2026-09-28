@@ -448,3 +448,45 @@ def test_mt5_provider_preserves_utc():
     assert client.received_start.tzinfo == UTC
     assert client.received_end.tzinfo == UTC
     assert client.received_start == start_utc
+
+def test_diagnose_missing_bars():
+    from datetime import UTC, datetime
+
+    from app.data.downloader import diagnose_missing_bars
+    from app.data.providers.mt5 import MT5Provider
+    
+    client = FakeMT5Client()
+    # Let's populate ticks for fake mt5
+    # tick format: (time, bid, ask, last, volume, flags)
+    base_ts = 1672617600 # 2023-01-02 00:00:00
+    
+    # Minute 0: no ticks
+    # Minute 1: 1 tick exactly at 00:01:30
+    # Minute 2: 1 tick exactly at 00:03:00 (which is the boundary, so inside minute 2 it's 0 ticks)
+    client.ticks = [
+        (base_ts + 90, 1.0, 1.1, 1.0, 100, 0), # 00:01:30
+        (base_ts + 180, 1.0, 1.1, 1.0, 100, 0) # 00:03:00
+    ]
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    missing = [
+        datetime(2023, 1, 2, 0, 0, tzinfo=UTC),
+        datetime(2023, 1, 2, 0, 1, tzinfo=UTC),
+        datetime(2023, 1, 2, 0, 2, tzinfo=UTC)
+    ]
+    
+    results = diagnose_missing_bars(provider, "EURUSD", missing)
+    
+    assert len(results) == 3
+    # Minute 0: NO_TICKS
+    assert results[0]["tick_count"] == 0
+    assert results[0]["classification"] == "NO_TICKS"
+    
+    # Minute 1: TICKS_PRESENT_BAR_MISSING
+    assert results[1]["tick_count"] == 1
+    assert results[1]["classification"] == "TICKS_PRESENT_BAR_MISSING"
+    
+    # Minute 2: Boundary tick at 00:03:00 is EXCLUDED from [00:02:00, 00:03:00)
+    assert results[2]["tick_count"] == 0
+    assert results[2]["classification"] == "NO_TICKS"

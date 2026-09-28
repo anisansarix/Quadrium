@@ -10,7 +10,6 @@ from app.data.datasets import DatasetManager
 from app.data.downloader import MT5Downloader
 from app.data.mt5_validation import MarginModel, validate_calculations
 from app.data.providers.mt5 import MT5Provider
-from app.data.providers.mt5_client import RealMT5Client
 
 
 def main():
@@ -29,27 +28,22 @@ def main():
     )
     calendar = ConfigurableCalendar(calendar_config)
     
-    print("Initializing RealMT5Client...")
-    client = RealMT5Client()
+    print("Initializing MT5Provider...")
+    kwargs = {}
+    if path: kwargs["path"] = path
+    if login: kwargs["login"] = int(login)
+    if password: kwargs["password"] = password
+    if server: kwargs["server"] = server
+    
+    provider = MT5Provider(**kwargs)
     try:
-        kwargs = {}
-        if path: kwargs["path"] = path
-        if login: kwargs["login"] = int(login)
-        if password: kwargs["password"] = password
-        if server: kwargs["server"] = server
-        
-        if not client.initialize(**kwargs):
-            err = client.last_error()
-            print(f"FAIL: MT5 initialize failed: {err}")
-            sys.exit(1)
-            
-        provider = MT5Provider(client=client)
         provider.connect()
     except Exception as e:  # noqa: BLE001
         print(f"FAIL: MT5Provider connect failed: {e}")
         sys.exit(1)
         
     try:
+        client = provider.client
         account = client.account_info()
         if not account:
             print("FAIL: Failed to get account info")
@@ -193,5 +187,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
