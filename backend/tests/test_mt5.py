@@ -174,6 +174,7 @@ def test_ingestion_fails_internal_gap():
             continue # Drop 10 bars
         rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
     client.rates = rates
+    client.ticks = [(base_ts + 105 * 60, 1.0, 1.1, 1.0, 100, 0)]
     provider = MT5Provider(client=client)
     provider.connect()
     
@@ -258,6 +259,7 @@ def test_ingestion_fails_missing_first_bar():
     for i in range(1, 1440): # Skip 0
         rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
     client.rates = rates
+    client.ticks = [(base_ts + 30, 1.0, 1.1, 1.0, 100, 0)]
     provider = MT5Provider(client=client)
     provider.connect()
     
@@ -295,6 +297,7 @@ def test_ingestion_fails_missing_last_bar():
     for i in range(1439): # Skip 1439 (last)
         rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
     client.rates = rates
+    client.ticks = [(base_ts + 1439 * 60 + 30, 1.0, 1.1, 1.0, 100, 0)]
     provider = MT5Provider(client=client)
     provider.connect()
     
@@ -449,44 +452,93 @@ def test_mt5_provider_preserves_utc():
     assert client.received_end.tzinfo == UTC
     assert client.received_start == start_utc
 
-def test_diagnose_missing_bars():
-    from datetime import UTC, datetime
 
-    from app.data.downloader import diagnose_missing_bars
-    from app.data.providers.mt5 import MT5Provider
+
+def test_ingestion_sparse_dataset_pass():
+    from datetime import UTC, datetime, time
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    temp_dir = Path("test_ingest_sparse")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
     
     client = FakeMT5Client()
-    # Let's populate ticks for fake mt5
-    # tick format: (time, bid, ask, last, volume, flags)
-    base_ts = 1672617600 # 2023-01-02 00:00:00
+    rates = []
+    base_ts = 1672617600
+    for i in range(1440):
+        if i == 10:
+            continue
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
+    client.ticks = []
     
-    # Minute 0: no ticks
-    # Minute 1: 1 tick exactly at 00:01:30
-    # Minute 2: 1 tick exactly at 00:03:00 (which is the boundary, so inside minute 2 it's 0 ticks)
-    client.ticks = [
-        (base_ts + 90, 1.0, 1.1, 1.0, 100, 0), # 00:01:30
-        (base_ts + 180, 1.0, 1.1, 1.0, 100, 0) # 00:03:00
-    ]
     provider = MT5Provider(client=client)
     provider.connect()
     
-    missing = [
-        datetime(2023, 1, 2, 0, 0, tzinfo=UTC),
-        datetime(2023, 1, 2, 0, 1, tzinfo=UTC),
-        datetime(2023, 1, 2, 0, 2, tzinfo=UTC)
-    ]
+    config = ConfigurableCalendarConfig(
+        sessions=[SessionWindow(start_day=0, start_time=time(0, 0), end_day=4, end_time=time(23, 59))]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
     
-    results = diagnose_missing_bars(provider, "EURUSD", missing)
+    artifact = workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
     
-    assert len(results) == 3
-    # Minute 0: NO_TICKS
-    assert results[0]["tick_count"] == 0
-    assert results[0]["classification"] == "NO_TICKS"
+    assert artifact.quality_report.quality_status == "PASS"
+    assert artifact.quality_report.coverage_status == "SPARSE"
+    assert artifact.quality_report.source_sparse_bars == 1
+    assert artifact.quality_report.ticks_present_bar_missing == 0
+    assert artifact.quality_report.unexpected_missing_bars == 0
     
-    # Minute 1: TICKS_PRESENT_BAR_MISSING
-    assert results[1]["tick_count"] == 1
-    assert results[1]["classification"] == "TICKS_PRESENT_BAR_MISSING"
+    import shutil
+    shutil.rmtree(temp_dir)
+
+def test_ingestion_ticks_present_bar_missing_fail():
+    from datetime import UTC, datetime, time
+    from pathlib import Path
+
+    import pytest
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
     
-    # Minute 2: Boundary tick at 00:03:00 is EXCLUDED from [00:02:00, 00:03:00)
-    assert results[2]["tick_count"] == 0
-    assert results[2]["classification"] == "NO_TICKS"
+    temp_dir = Path("test_ingest_corrupted")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    rates = []
+    base_ts = 1672617600
+    for i in range(1440):
+        if i == 10:
+            continue
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
+    client.ticks = [(base_ts + 10 * 60 + 30, 1.0, 1.1, 1.0, 100, 0)]
+    
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    config = ConfigurableCalendarConfig(
+        sessions=[SessionWindow(start_day=0, start_time=time(0, 0), end_day=4, end_time=time(23, 59))]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    with pytest.raises(ValueError, match="Dataset ingestion failed quality checks"):
+        workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+        
+    import shutil
+    shutil.rmtree(temp_dir)
+
