@@ -1,8 +1,10 @@
-from typing import Dict, Any, List
+from typing import Any
+
 from app.evaluation.ledger import TradeRecord
 
+
 class MetricsCalculator:
-    def calculate(self, ledger: List[TradeRecord], initial_balance: float) -> Dict[str, Any]:
+    def calculate(self, ledger: list[TradeRecord], initial_balance: float) -> dict[str, Any]:
         if not ledger:
             return {
                 "total_return_pct": 0.0,

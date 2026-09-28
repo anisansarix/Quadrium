@@ -1,6 +1,8 @@
-from abc import ABC, abstractmethod
 import math
+from abc import ABC, abstractmethod
+
 from app.domain.models import AccountSnapshot
+
 
 class RewardModel(ABC):
     @abstractmethod

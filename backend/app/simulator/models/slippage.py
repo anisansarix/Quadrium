@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class SlippageModel(ABC):
     @abstractmethod
     def apply_slippage(self, symbol: str, requested_price: float, is_buy: bool) -> float:

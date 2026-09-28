@@ -1,7 +1,8 @@
-from pydantic import BaseModel
-from typing import List, Optional
 from datetime import datetime
 from uuid import UUID
+
+from pydantic import BaseModel
+
 
 class TradeRecord(BaseModel):
     id: UUID
@@ -11,8 +12,8 @@ class TradeRecord(BaseModel):
     volume: float
     requested_price: float
     fill_price: float
-    sl: Optional[float] = None
-    tp: Optional[float] = None
+    sl: float | None = None
+    tp: float | None = None
     commission: float
     swap: float
     realized_pnl: float
@@ -25,7 +26,7 @@ class TradeRecord(BaseModel):
 
 class Ledger:
     def __init__(self):
-        self.trades: List[TradeRecord] = []
+        self.trades: list[TradeRecord] = []
 
     def append(self, record: TradeRecord):
         self.trades.append(record)

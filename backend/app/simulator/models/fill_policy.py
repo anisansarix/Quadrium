@@ -1,5 +1,7 @@
 from enum import Enum
+
 from pydantic import BaseModel
+
 
 class SLTriggerQuote(str, Enum):
     BID = "BID"

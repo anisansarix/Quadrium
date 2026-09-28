@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.domain.models import (
@@ -13,23 +13,24 @@ from app.domain.models import (
     Quote,
 )
 from app.simulator.models.commission import CommissionModel, ZeroCommissionModel
-from app.simulator.models.swap import SwapModel, ZeroSwapModel
-from app.simulator.models.slippage import SlippageModel, ZeroSlippageModel
-from app.simulator.models.margin import MarginModel, DeterministicMarginModel
 from app.simulator.models.currency import CurrencyConversionModel, DeterministicUSDModel
 from app.simulator.models.fill_policy import IntrabarFillPolicy
+from app.simulator.models.margin import DeterministicMarginModel, MarginModel
+from app.simulator.models.slippage import SlippageModel, ZeroSlippageModel
+from app.simulator.models.swap import SwapModel, ZeroSwapModel
+
 
 class SimulatorEngine:
     def __init__(
         self,
         initial_balance: float = 10000.0,
         currency: str = "USD",
-        commission_model: CommissionModel = ZeroCommissionModel(),
-        swap_model: SwapModel = ZeroSwapModel(),
-        slippage_model: SlippageModel = ZeroSlippageModel(),
-        margin_model: MarginModel = DeterministicMarginModel(),
-        currency_model: CurrencyConversionModel = DeterministicUSDModel(),
-        fill_policy: IntrabarFillPolicy = IntrabarFillPolicy()
+        commission_model: CommissionModel | None = None,
+        swap_model: SwapModel | None = None,
+        slippage_model: SlippageModel | None = None,
+        margin_model: MarginModel | None = None,
+        currency_model: CurrencyConversionModel | None = None,
+        fill_policy: IntrabarFillPolicy | None = None
     ):
         self.balance = initial_balance
         self.equity = initial_balance
@@ -40,12 +41,12 @@ class SimulatorEngine:
         self.quotes: dict[str, Quote] = {}
         self.instruments: dict[str, InstrumentSpec] = {}
         
-        self.commission_model = commission_model
-        self.swap_model = swap_model
-        self.slippage_model = slippage_model
-        self.margin_model = margin_model
-        self.currency_model = currency_model
-        self.fill_policy = fill_policy
+        self.commission_model = commission_model or ZeroCommissionModel()
+        self.swap_model = swap_model or ZeroSwapModel()
+        self.slippage_model = slippage_model or ZeroSlippageModel()
+        self.margin_model = margin_model or DeterministicMarginModel()
+        self.currency_model = currency_model or DeterministicUSDModel()
+        self.fill_policy = fill_policy or IntrabarFillPolicy()
 
     def set_instrument(self, spec: InstrumentSpec) -> None:
         self.instruments[spec.canonical_symbol] = spec
@@ -84,14 +85,10 @@ class SimulatorEngine:
                 q = self.quotes.get(p.symbol)
                 if q:
                     if p.side == OrderSide.BUY:
-                        if p.sl is not None and q.bid <= p.sl:
-                            self.close_position(str(p.id), q.bid)
-                        elif p.tp is not None and q.bid >= p.tp:
+                        if p.sl is not None and q.bid <= p.sl or p.tp is not None and q.bid >= p.tp:
                             self.close_position(str(p.id), q.bid)
                     else:
-                        if p.sl is not None and q.ask >= p.sl:
-                            self.close_position(str(p.id), q.ask)
-                        elif p.tp is not None and q.ask <= p.tp:
+                        if p.sl is not None and q.ask >= p.sl or p.tp is not None and q.ask <= p.tp:
                             self.close_position(str(p.id), q.ask)
 
     def submit_order(self, order: ApprovedOrder) -> ExecutionResult:
@@ -191,9 +188,8 @@ class SimulatorEngine:
         return False
 
     def get_account_snapshot(self) -> AccountSnapshot:
-        from datetime import timezone
         return AccountSnapshot(
-            timestamp=self.current_time or datetime.now(timezone.utc),
+            timestamp=self.current_time or datetime.now(UTC),
             balance=self.balance,
             equity=self.equity,
             margin=self.margin,

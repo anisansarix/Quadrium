@@ -1,14 +1,22 @@
-from typing import List, Dict, Any, Type
-import pandas as pd
-from datetime import datetime, timezone
+from typing import Any
 from uuid import uuid4
 
-from app.domain.models import Quote, RiskContext, RiskPolicy, ExperimentSpec, ExperimentResult, InstrumentSpec
-from app.simulator.engine import SimulatorEngine
+import pandas as pd
+
 from app.core.decision_pipeline import DecisionPipeline
-from app.strategies.baseline import Strategy
+from app.domain.models import (
+    ExperimentResult,
+    ExperimentSpec,
+    InstrumentSpec,
+    Quote,
+    RiskContext,
+    RiskPolicy,
+)
 from app.evaluation.ledger import Ledger, TradeRecord
 from app.evaluation.metrics import MetricsCalculator
+from app.simulator.engine import SimulatorEngine
+from app.strategies.baseline import Strategy
+
 
 class BacktestRunner:
     def __init__(self, simulator: SimulatorEngine, pipeline: DecisionPipeline, policy: RiskPolicy, strategy: Strategy):
@@ -22,10 +30,10 @@ class BacktestRunner:
         self.start_of_day_equity = simulator.equity
         self.equity_peak = simulator.equity
 
-    def run(self, data: List[Quote], spec: InstrumentSpec) -> ExperimentResult:
+    def run(self, data: list[Quote], spec: InstrumentSpec) -> ExperimentResult:
         self.simulator.set_instrument(spec)
-        
-        history_records = []
+        history_records: list[dict[str, Any]] = []
+        last_date = None
         
         for q in data:
             self.simulator.update_quote(q)
@@ -38,8 +46,10 @@ class BacktestRunner:
             self.equity_peak = max(self.equity_peak, self.simulator.equity)
             
             # Simple daily reset logic approximation
-            if len(history_records) > 1 and history_records[-1]["timestamp"].date() != history_records[-2]["timestamp"].date():
+            current_date = q.timestamp.date()
+            if last_date is not None and current_date != last_date:
                 self.start_of_day_equity = self.simulator.equity
+            last_date = current_date
             
             context = RiskContext(
                 account=self.simulator.get_account_snapshot(),

@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class MarginModel(ABC):
     @abstractmethod
     def calculate_margin(self, symbol: str, volume: float, price: float, contract_size: float, leverage: float) -> float:

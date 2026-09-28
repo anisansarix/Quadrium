@@ -6,8 +6,8 @@ from gymnasium import spaces
 
 from app.core.decision_pipeline import DecisionPipeline
 from app.domain.models import Quote, RiskContext, RiskPolicy, TargetPosition
+from app.envs.reward import LogEquityChangeReward, RewardModel
 from app.simulator.engine import SimulatorEngine
-from app.envs.reward import RewardModel, LogEquityChangeReward
 
 
 class TradingEnv(gym.Env):

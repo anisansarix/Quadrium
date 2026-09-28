@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
-from datetime import datetime, timedelta
+from datetime import datetime
+
 
 class LatencyModel(ABC):
     @abstractmethod

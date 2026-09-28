@@ -1,10 +1,25 @@
+from datetime import UTC, datetime
+
 import pytest
-from datetime import datetime, timezone, timedelta
-from app.simulator.engine import SimulatorEngine
-from app.domain.models import Quote, InstrumentSpec, OrderIntent, OrderSide, OrderType, ApprovedOrder, RiskDecision, RiskDecisionState, TargetPosition, RiskContext, RiskPolicy, AccountSnapshot, PositionState
 from app.core.decision_pipeline import DecisionPipeline
+from app.domain.models import (
+    ApprovedOrder,
+    InstrumentSpec,
+    OrderIntent,
+    OrderSide,
+    OrderType,
+    PositionState,
+    Quote,
+    RiskContext,
+    RiskDecision,
+    RiskDecisionState,
+    RiskPolicy,
+    TargetPosition,
+)
 from app.risk.engine import RiskEngine
+from app.simulator.engine import SimulatorEngine
 from app.simulator.models.currency import DeterministicUSDModel
+
 
 @pytest.fixture
 def spec():
@@ -39,7 +54,7 @@ def test_unsupported_currency_conversion():
         model.convert_to_account_currency(100.0, "EUR")
 
 def test_scenario_buy_and_price_rises(sim):
-    t = datetime.now(timezone.utc)
+    t = datetime.now(UTC)
     sim.update_quote(Quote(timestamp=t, symbol="EURUSD", bid=1.1000, ask=1.1002))
     
     intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)
@@ -53,7 +68,7 @@ def test_scenario_buy_and_price_rises(sim):
     assert len(sim.positions) == 1
     
 def test_scenario_spread_only_loss(sim):
-    t = datetime.now(timezone.utc)
+    t = datetime.now(UTC)
     sim.update_quote(Quote(timestamp=t, symbol="EURUSD", bid=1.1000, ask=1.1002))
     
     intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)
@@ -64,7 +79,7 @@ def test_scenario_spread_only_loss(sim):
     assert sim.equity == pytest.approx(9980.0) # 2 pips spread on 1 lot = $20 loss unrealized
 
 def test_scenario_partial_close_and_reversal(sim, policy):
-    t = datetime.now(timezone.utc)
+    t = datetime.now(UTC)
     sim.update_quote(Quote(timestamp=t, symbol="EURUSD", bid=1.1000, ask=1.1002))
     
     intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=2.0)
@@ -93,7 +108,7 @@ def test_scenario_risk_breaches(sim, policy, spec):
     engine = RiskEngine()
     pipeline = DecisionPipeline(engine)
     
-    t = datetime.now(timezone.utc)
+    t = datetime.now(UTC)
     sim.update_quote(Quote(timestamp=t, symbol="EURUSD", bid=1.1000, ask=1.1002))
     
     ctx = RiskContext(

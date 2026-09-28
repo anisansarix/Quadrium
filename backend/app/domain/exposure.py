@@ -1,5 +1,6 @@
+
 from pydantic import BaseModel
-from typing import Optional
+
 
 class TargetExposure(BaseModel):
     """
@@ -36,4 +37,4 @@ class PositionSizingResult(BaseModel):
     account_currency_notional: float
     margin_required: float
     rejected: bool
-    rejection_reason: Optional[str] = None
+    rejection_reason: str | None = None

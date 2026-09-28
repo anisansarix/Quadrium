@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class CurrencyConversionModel(ABC):
     @abstractmethod
     def convert_to_account_currency(self, amount: float, source_currency: str) -> float:

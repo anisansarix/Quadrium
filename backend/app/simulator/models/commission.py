@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 
+
 class CommissionModel(ABC):
     @abstractmethod
     def calculate_commission(self, symbol: str, volume: float) -> float:
