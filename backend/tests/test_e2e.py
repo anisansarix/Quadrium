@@ -89,10 +89,10 @@ def test_full_deterministic_research_flow() -> None:
     }
     
     spec_data = ExperimentSpec(
-        git_sha="abcdef", dataset_hash="hash123", feature_version="1.0", simulator_version="1.0",
+        git_sha="synthetic-golden-v1", dataset_hash="synthetic-golden-v1", feature_version="1.0", simulator_version="1.0",
         risk_policy_id="test-pol", risk_policy_version="1.0", environment_version="1.0", seed=42,
         train_window={}, validation_window={}, test_window={"start": data[0].timestamp, "end": data[-1].timestamp},
-        holdout_window={}, execution_cost_profile="default"
+        holdout_window={}, execution_cost_profile="synthetic-default"
     )
     
     result = ExperimentResult(

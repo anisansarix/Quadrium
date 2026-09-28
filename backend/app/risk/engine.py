@@ -108,8 +108,10 @@ class RiskEngine:
                         
         # 8. Trade & Open Risk Pct
         if intent.sl is not None:
-            trade_risk_pts = abs(price - intent.sl) / context.instrument.point
-            trade_risk_cash = trade_risk_pts * context.instrument.tick_value * (approved_volume / context.instrument.tick_size)
+            # tick_value is cash value per tick per volume unit
+            price_distance = abs(price - intent.sl)
+            ticks = price_distance / context.instrument.tick_size
+            trade_risk_cash = ticks * context.instrument.tick_value * approved_volume
             if trade_risk_cash / context.account.equity >= policy.max_trade_risk_pct:
                 violations.append("Max trade risk exceeded")
                 

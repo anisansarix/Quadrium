@@ -282,10 +282,134 @@ def test_gym_reward_transition(spec, policy):
     
     _obs, reward, _terminated, _truncated, info = env.step([1.0])
     
-    # t=0 action is buy. Price moves from 1.1002 (ask) to 1.1010 (bid at t=1).
-    # Contract size 100k, Volume is based on max net exposure.
-    # We just want to check that reward > 0 and info equity > 10000
+    # Exact reward derivation:
+    # Volume: leverage_limit (30) * equity (10000) / notional(100k * 1.1002) = 2.72
+    # Open price (buy at ask): 1.1002
+    # Next mark-to-market bid: 1.1010
+    # Floating PnL = (1.1010 - 1.1002) * 2.72 * 100000 = 217.6
+    # Final equity = 10000 + 217.6 = 10217.6
+    # Reward = log(10217.6 / 10000)
     
-        
-    assert reward > 0
-    assert info['equity'] > 10000
+    import numpy as np
+    expected_equity = 10217.6
+    expected_reward = float(np.log(expected_equity / 10000.0))
+    
+    assert info['equity'] == pytest.approx(expected_equity)
+    assert reward == pytest.approx(expected_reward)
+
+def test_account_state_orchestration(spec, policy):
+    from app.core.decision_executor import DecisionExecutor
+    sim = SimulatorEngine(initial_balance=10000.0)
+    sim.set_instrument(spec)
+    engine = RiskEngine()
+    executor = DecisionExecutor(sim)
+    
+    # Base ctx
+    t = datetime.now(UTC)
+    q = Quote(timestamp=t, symbol="EURUSD", bid=1.1000, ask=1.1002)
+    sim.update_quote(q)
+    
+    # Open a position first so we can verify FLATTEN closes it
+    from app.domain.models import (
+        ApprovedOrder,
+        OrderIntent,
+        OrderSide,
+        OrderType,
+        RiskDecision,
+        RiskDecisionState,
+    )
+    intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)
+    decision = RiskDecision(state=RiskDecisionState.APPROVE, proposed_target=1.0, approved_target=1.0, proposed_volume=1.0, approved_volume=1.0, policy_id="x", policy_version="1", timestamp=t)
+    sim.submit_order(ApprovedOrder(intent=intent, risk_decision=decision, timestamp=t))
+    assert len(sim.positions) == 1
+    
+    # 1. Hard drawdown breach -> FLATTEN
+    policy.max_drawdown_pct = 0.10
+    sim.equity = 8000.0 # 20% drawdown
+    ctx = RiskContext(account=sim.get_account_snapshot(), open_positions=sim.positions, current_quote=q, instrument=spec, start_of_day_equity=10000.0, equity_peak=10000.0, current_time=t)
+    decision_flatten = engine.evaluate(ctx, intent, policy, 1.0, 1.0)
+    assert decision_flatten.state == RiskDecisionState.FLATTEN
+    
+    # Execute flatten
+    executor.execute(decision_flatten)
+    assert len([p for p in sim.positions if p.state.value == "OPEN"]) == 0 # closed
+    assert sim.account_state == AccountState.FLATTEN_AND_FREEZE
+    
+    # New order rejected by simulator
+    res = sim.submit_order(ApprovedOrder(intent=intent, risk_decision=decision, timestamp=t))
+    assert res.success is False
+    assert "frozen" in res.error_message.lower()
+    
+    # Reset and test FREEZE
+    sim.account_state = AccountState.NORMAL
+    sim.equity = 9000.0 # 10% loss
+    sim.balance = 10000.0
+    policy.max_drawdown_pct = 0.50 # avoid flatten
+    ctx2 = RiskContext(account=sim.get_account_snapshot(), open_positions=sim.positions, current_quote=q, instrument=spec, start_of_day_equity=10000.0, equity_peak=10000.0, current_time=t)
+    decision_freeze = engine.evaluate(ctx2, intent, policy, 1.0, 1.0)
+    assert decision_freeze.state == RiskDecisionState.FREEZE
+    
+    executor.execute(decision_freeze)
+    assert sim.account_state == AccountState.FREEZE
+    
+    res2 = sim.submit_order(ApprovedOrder(intent=intent, risk_decision=decision, timestamp=t))
+    assert res2.success is False
+    assert "frozen" in res2.error_message.lower()
+
+def test_sl_reaches_ledger_end_to_end(spec, policy):
+    from app.core.decision_pipeline import DecisionPipeline
+    from app.domain.models import (
+        ApprovedOrder,
+        OrderIntent,
+        OrderSide,
+        OrderType,
+        RiskDecision,
+        RiskDecisionState,
+        TargetPosition,
+    )
+    from app.evaluation.backtest import BacktestRunner
+    from app.strategies.baseline import Strategy
+    
+    class MockStrategy(Strategy):
+        def __init__(self):
+            super().__init__()
+            self.triggered = False
+        def next(self, quote, history):
+            if not self.triggered:
+                self.triggered = True
+                return TargetPosition(symbol="EURUSD", target_weight=1.0)
+            return None
+            
+    class MockPipeline(DecisionPipeline):
+        def process(self, target, context, policy):
+            if target.target_weight == 0:
+                return None, None
+            # Buy with SL at 1.0990
+            intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0, sl=1.0990)
+            decision = RiskDecision(state=RiskDecisionState.APPROVE, proposed_target=1.0, approved_target=1.0, proposed_volume=1.0, approved_volume=1.0, policy_id="x", policy_version="1", timestamp=context.current_time)
+            return ApprovedOrder(intent=intent, risk_decision=decision, timestamp=context.current_time), decision
+
+    sim = SimulatorEngine(initial_balance=10000.0)
+    runner = BacktestRunner(sim, MockPipeline(RiskEngine()), policy, MockStrategy())
+    
+    t0 = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
+    data = [
+        Quote(timestamp=t0, symbol='EURUSD', bid=1.1000, ask=1.1002), # Buy at ask 1.1002, SL 1.0990
+        Quote(timestamp=t0+timedelta(minutes=1), symbol='EURUSD', bid=1.0988, ask=1.0990), # SL trigger because bid 1.0988 <= 1.0990
+        Quote(timestamp=t0+timedelta(minutes=2), symbol='EURUSD', bid=1.0980, ask=1.0982)
+    ]
+    
+    result = runner.run(data, spec)
+    
+    # Assertions
+    assert len(result.executions) == 2 # Entry and SL exit
+    assert len(result.closed_trades) == 1
+    
+    ct = result.closed_trades[0]
+    assert ct.exit_reason == "SL"
+    
+    # Check that equity curve drops
+    # The exit is at 1.0988 (trigger price of BID, which is 1.0988)
+    # Entry at 1.1002. Loss is 1.1002 - 1.0988 = 0.0014 * 100000 = 
+    # Final equity should be 10000 - 140 = 9860
+    assert result.equity_curve[-1].equity == pytest.approx(9860.0)

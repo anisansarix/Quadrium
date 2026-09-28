@@ -1,34 +1,7 @@
-from datetime import datetime
-
-from pydantic import BaseModel
-
-from app.domain.models import ClosedTrade
 
 
-class ExecutionRecord(BaseModel):
-    order_id: str
-    symbol: str
-    side: str
-    volume: float
-    requested_price: float
-    fill_price: float
-    timestamp: datetime
-    realized_pnl: float
-    commission: float
-    swap: float
+from app.domain.models import ClosedTrade, EquityRecord, ExecutionRecord
 
-class EquityRecord(BaseModel):
-    timestamp: datetime
-    balance: float
-    equity: float
-    floating_pnl: float
-    realized_pnl_delta: float
-    commission_delta: float
-    swap_delta: float
-    margin: float
-    margin_free: float
-    drawdown: float
-    daily_pnl: float
 
 class Ledger:
     def __init__(self):

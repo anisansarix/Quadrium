@@ -89,3 +89,33 @@ def test_risk_daily_loss_rejection(base_context, base_policy):
     decision = engine.evaluate(base_context, intent, base_policy, proposed_target=1.0, proposed_volume=1.0)
     assert decision.state == RiskDecisionState.FREEZE
     assert any("Max daily loss exceeded" in v for v in decision.violations)
+
+def test_risk_exact_trade_risk_threshold(base_context, base_policy):
+    # Account equity = 10,000
+    base_context.account.equity = 10000.0
+    base_policy.max_trade_risk_pct = 0.01 # 1% = \ max risk
+    
+    engine = RiskEngine()
+    
+    # Tick size is 0.00001, tick value is 1.0. Volume 1.0 (100k contract).
+    # Risk cash = ticks * tick_value * volume
+    # To get \ risk at 1 lot: ticks = 100 / (1 * 1) = 100 ticks.
+    # 100 ticks = 0.00100 points.
+    
+    # Base quote is ask 1.1002. Entry is 1.1002.
+    #  risk SL = 1.1002 - 0.00100 = 1.0992
+    
+    intent_exact = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0, sl=1.0992)
+    decision_exact = engine.evaluate(base_context, intent_exact, base_policy, proposed_target=1.0, proposed_volume=1.0)
+    assert decision_exact.state == RiskDecisionState.REJECT
+    assert any("trade risk" in v.lower() for v in decision_exact.violations)
+    
+    # .99 risk SL = 1.1002 - 0.0009999
+    intent_approve = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0, sl=1.0992001)
+    decision_approve = engine.evaluate(base_context, intent_approve, base_policy, proposed_target=1.0, proposed_volume=1.0)
+    assert decision_approve.state == RiskDecisionState.APPROVE
+    
+    # .01 risk SL = 1.1002 - 0.0010001
+    intent_reject = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0, sl=1.0991999)
+    decision_reject = engine.evaluate(base_context, intent_reject, base_policy, proposed_target=1.0, proposed_volume=1.0)
+    assert decision_reject.state == RiskDecisionState.REJECT

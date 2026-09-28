@@ -12,7 +12,6 @@ from app.domain.models import (
     Quote,
     RiskContext,
     RiskDecision,
-    RiskDecisionState,
     RiskPolicy,
     SimulationEvent,
 )
@@ -60,10 +59,19 @@ class BacktestRunner:
         for rd in event.risk_events:
             self.risk_events.append(rd)
 
-    def run(self, data: list[Quote], spec: InstrumentSpec) -> BacktestResult:
+    def run(self, data: list[Quote], spec: InstrumentSpec, metadata: dict[str, Any] | None = None) -> BacktestResult:
         self.simulator.set_instrument(spec)
         history_records: list[dict[str, Any]] = []
         last_date = None
+        
+        metadata = metadata or {}
+        git_sha = metadata.get("git_sha", "unknown")
+        dataset_hash = metadata.get("dataset_hash", "unknown")
+        feature_version = metadata.get("feature_version", "1.0")
+        simulator_version = metadata.get("simulator_version", "1.0")
+        environment_version = metadata.get("environment_version", "1.0")
+        seed = metadata.get("seed", 0)
+        execution_cost_profile = metadata.get("execution_cost_profile", "default")
         
         for q in data:
             sim_event = self.simulator.update_quote(q)
@@ -99,16 +107,13 @@ class BacktestRunner:
                 if decision:
                     self.risk_events.append(decision)
                     
-                    if decision.state == RiskDecisionState.FREEZE:
-                        self.simulator.freeze_account()
-                    elif decision.state == RiskDecisionState.FLATTEN:
-                        cts, fills = self.simulator.flatten_and_freeze()
-                        self._process_simulation_event(SimulationEvent(timestamp=q.timestamp, fills=fills, closed_trades=cts), q)
-                    elif approved_order and decision.state in [RiskDecisionState.APPROVE, RiskDecisionState.CLAMP]:
-                        res = self.simulator.submit_order(approved_order)
-                        if res.success:
-                            sim_event2 = SimulationEvent(timestamp=q.timestamp, fills=res.fills, closed_trades=res.closed_trades)
-                            self._process_simulation_event(sim_event2, q, side_hint=approved_order.intent.side.value)
+                    from app.core.decision_executor import DecisionExecutor
+                    executor = DecisionExecutor(self.simulator)
+                    res = executor.execute(decision, approved_order)
+                    
+                    if res and res.success:
+                        sim_event2 = SimulationEvent(timestamp=q.timestamp, fills=res.fills, closed_trades=res.closed_trades)
+                        self._process_simulation_event(sim_event2, q, side_hint=approved_order.intent.side.value if approved_order else "SELL")
                             
             # Calculate Deltas for EquityRecord
             realized_pnl_delta = self.simulator.balance - self.prev_balance
@@ -171,11 +176,11 @@ class BacktestRunner:
         metrics = self.metrics_calculator.calculate(self.ledger.closed_trades, self.ledger.equity_curve, self.initial_balance)
         
         spec_data = ExperimentSpec(
-            git_sha="detached", dataset_hash="none", feature_version="1", simulator_version="1",
+            git_sha=git_sha, dataset_hash=dataset_hash, feature_version=feature_version, simulator_version=simulator_version,
             risk_policy_id=self.policy.id, risk_policy_version=self.policy.version,
-            environment_version="1", seed=0, train_window={}, validation_window={},
+            environment_version=environment_version, seed=seed, train_window={}, validation_window={},
             test_window={"start": data[0].timestamp, "end": data[-1].timestamp} if data else {},
-            holdout_window={}, execution_cost_profile="deterministic"
+            holdout_window={}, execution_cost_profile=execution_cost_profile
         )
         
         experiment_result = ExperimentResult(

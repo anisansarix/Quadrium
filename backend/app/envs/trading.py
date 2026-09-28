@@ -74,16 +74,12 @@ class TradingEnv(gym.Env):
         prev_account = context.account
         
         # t: pipeline decision and execution
-        from app.domain.models import RiskDecisionState
         approved_order, decision = self.pipeline.process(target, context, self.policy)
         
         if decision:
-            if decision.state == RiskDecisionState.FREEZE:
-                self.simulator.freeze_account()
-            elif decision.state == RiskDecisionState.FLATTEN:
-                self.simulator.flatten_and_freeze()
-            elif approved_order and decision.state in [RiskDecisionState.APPROVE, RiskDecisionState.CLAMP]:
-                self.simulator.submit_order(approved_order)
+            from app.core.decision_executor import DecisionExecutor
+            executor = DecisionExecutor(self.simulator)
+            executor.execute(decision, approved_order)
                 
         # Advance to t+1 and mark to market
         self.current_step += 1

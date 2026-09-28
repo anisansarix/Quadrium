@@ -128,6 +128,24 @@ class OrderIntent(BaseModel):
     comment: str = ""
 
 class RiskPolicy(BaseModel):
+    """
+    Risk policy constraints mapping.
+    
+    Units and semantic implementation:
+    - max_daily_loss_pct: float [0.0 - 1.0], implemented as FREEZE
+    - max_drawdown_pct: float [0.0 - 1.0], implemented as FLATTEN
+    - max_trade_risk_pct: float [0.0 - 1.0], implemented as REJECT
+    - max_open_risk_pct: float [0.0 - 1.0], NOT IMPLEMENTED (TODO)
+    - max_gross_exposure: float in account currency notional, implemented as REJECT (unless closing)
+    - max_net_exposure: float in account currency notional, implemented as REJECT (unless closing)
+    - max_position_count: int count of open positions, NOT IMPLEMENTED (TODO)
+    - max_spread_pts: int in instrument points, implemented as REJECT
+    - require_sl: bool, implemented as REJECT
+    - session_constraints: dict, NOT IMPLEMENTED (TODO)
+    - leverage_limit: float, multiplier of equity to gross notional, implemented as CLAMP
+    
+    The deterministic phase assumes a single USD account, single symbol, and USD profit currency.
+    """
     id: str
     version: str
     max_daily_loss_pct: float
@@ -245,10 +263,35 @@ class SimulationEvent(BaseModel):
     closed_trades: list[ClosedTrade] = []
     risk_events: list[RiskDecision] = []
 
+class ExecutionRecord(BaseModel):
+    order_id: str
+    symbol: str
+    side: str
+    volume: float
+    requested_price: float
+    fill_price: float
+    timestamp: datetime
+    realized_pnl: float
+    commission: float
+    swap: float
+
+class EquityRecord(BaseModel):
+    timestamp: datetime
+    balance: float
+    equity: float
+    floating_pnl: float
+    realized_pnl_delta: float
+    commission_delta: float
+    swap_delta: float
+    margin: float
+    margin_free: float
+    drawdown: float
+    daily_pnl: float
+
 class BacktestResult(BaseModel):
     experiment_result: ExperimentResult
-    equity_curve: list[Any] # Will use EquityRecord internally, but avoids circular import in models
+    equity_curve: list[EquityRecord]
     closed_trades: list[ClosedTrade]
-    executions: list[Any] # Will use ExecutionRecord internally
+    executions: list[ExecutionRecord]
     risk_events: list[RiskDecision]
     metrics: dict[str, Any]
