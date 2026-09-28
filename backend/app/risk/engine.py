@@ -71,14 +71,12 @@ class RiskEngine:
         proposed_net_notional = abs(proposed_net_vol) * context.instrument.contract_size * price
         
         # Gross Exposure
-        if policy.max_gross_exposure > 0 and proposed_gross_notional >= policy.max_gross_exposure:
-            if not is_closing:
-                violations.append("Max gross exposure exceeded")
+        if policy.max_gross_exposure > 0 and proposed_gross_notional >= policy.max_gross_exposure and not is_closing:
+            violations.append("Max gross exposure exceeded")
             
         # Net Exposure
-        if policy.max_net_exposure > 0 and proposed_net_notional >= policy.max_net_exposure:
-            if not is_closing:
-                violations.append("Max net exposure exceeded")
+        if policy.max_net_exposure > 0 and proposed_net_notional >= policy.max_net_exposure and not is_closing:
+            violations.append("Max net exposure exceeded")
             
         # Leverage limit
         if proposed_gross_notional / context.account.equity > policy.leverage_limit:
