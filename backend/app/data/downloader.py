@@ -78,7 +78,7 @@ class MT5Downloader:
         validate_dataframe(df_full, expected_symbol=symbol, expected_timeframe=timeframe)
         
         initial_len = len(df_full)
-        df_full = df_full.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
+        df_full = df_full.sort_values("timestamp")
         duplicates_count = initial_len - len(df_full)
         
         coverage_status, expected_timestamps = evaluate_coverage(df_full, start, end, timeframe, self.calendar)

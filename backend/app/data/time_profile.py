@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 
 class OffsetPeriod(BaseModel):
@@ -16,6 +16,50 @@ class TimeProfile(BaseModel):
     symbol: str
     source_time_basis: str
     periods: list[OffsetPeriod]
+
+    @model_validator(mode='after')
+    def validate_periods(self):
+        # Sort periods
+        sorted_periods = sorted(self.periods, key=lambda p: p.effective_from if p.effective_from is not None else -float('inf'))
+        
+        for i, p in enumerate(sorted_periods):
+            p_start = p.effective_from if p.effective_from is not None else -float('inf')
+            p_end = p.effective_to if p.effective_to is not None else float('inf')
+            
+            if p_start >= p_end:
+                raise ValueError(f"Period effective_from ({p.effective_from}) must be less than effective_to ({p.effective_to})")
+                
+            if i > 0:
+                prev_p = sorted_periods[i-1]
+                prev_end = prev_p.effective_to if prev_p.effective_to is not None else float('inf')
+                if p_start < prev_end:
+                    raise ValueError(f"Periods overlap: {prev_p} and {p}")
+                if p_start > prev_end:
+                    raise ValueError(f"Periods have a gap between {prev_end} and {p_start}")
+                    
+                # Ambiguous raw-to-UTC transition check (backward jump in Server Time)
+                # If we jump BACKWARDS in server time, the same Server Time integer maps to two different UTC times!
+                # e.g., if offset goes from +3 to +2, then 03:00 Server Time (UTC 00:00) happens.
+                # Then at 04:00 Server Time (UTC 01:00), the clock falls back to 03:00 Server Time (UTC 01:00).
+                # So 03:00 to 04:00 Server Time happens TWICE.
+                # A raw timestamp in that hour is ambiguous!
+                # We can't trivially invert it without knowing the session.
+                # The prompt asks: "Add validation that profile periods... do not create ambiguous raw-to-UTC mappings."
+                # Actually, a backward jump ALWAYS creates an ambiguous mapping in raw time.
+                # Wait, if we know the raw time, can we invert it?
+                # If a time period ends at prev_end (UTC) with offset1, the last raw time is prev_end + offset1.
+                # The next period starts at p_start (UTC) with offset2, the first raw time is p_start + offset2.
+                # Since prev_end == p_start, the raw gap is offset2 - offset1.
+                # If offset2 < offset1, the first raw time of the new period is BEFORE the last raw time of the old period!
+                # This creates ambiguity. The prompt says "do not create ambiguous raw-to-UTC mappings."
+                # Does this mean we should raise an error if offset2 < offset1?
+                # The user said: "do not create ambiguous raw-to-UTC mappings... Add explicit tests for: UTC+3 -> UTC+2 transition... overlapping-period failure, ambiguous raw timestamp failure"
+                # Wait! A UTC+3 to UTC+2 transition IS a backward jump, so it DOES create ambiguity.
+                # So how can we have a test for UTC+3 -> UTC+2 if we forbid ambiguous mappings?
+                # Ah! The user might want convert_raw_to_utc to raise an error if a specific raw timestamp falls in the ambiguous window!
+                # Not that the Profile itself is invalid, but the mapping function throws an error for ambiguous values!
+                
+        return self
 
     def get_subranges(self, start_utc: datetime, end_utc: datetime) -> list[tuple[datetime, datetime, float]]:
         start_epoch = start_utc.timestamp()
@@ -55,15 +99,21 @@ class TimeProfile(BaseModel):
         return ranges
 
     def convert_raw_to_utc(self, raw_timestamp: int) -> datetime:
+        valid_utcs = []
         for p in self.periods:
             p_start = p.effective_from if p.effective_from is not None else -float('inf')
             p_end = p.effective_to if p.effective_to is not None else float('inf')
             
             utc_epoch = float(raw_timestamp) - (p.offset_hours * 3600.0)
             if p_start <= utc_epoch < p_end:
-                return datetime.fromtimestamp(utc_epoch, tz=UTC)
+                valid_utcs.append(datetime.fromtimestamp(utc_epoch, tz=UTC))
                 
-        raise ValueError(f"No valid time profile period found for raw timestamp {raw_timestamp}")
+        if not valid_utcs:
+            raise ValueError(f"No valid time profile period found for raw timestamp {raw_timestamp}")
+        if len(valid_utcs) > 1:
+            raise ValueError(f"Ambiguous raw timestamp {raw_timestamp} falls into multiple profile periods due to a backward time transition (e.g. DST fallback).")
+            
+        return valid_utcs[0]
         
     def add_canonical_column(self, df, raw_col='time', new_col='timestamp'):
         import pandas as pd

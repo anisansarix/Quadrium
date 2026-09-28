@@ -9,6 +9,7 @@ from app.data.datasets import DatasetManager
 from app.data.downloader import MT5Downloader
 from app.data.mt5_validation import MarginModel, validate_calculations
 from app.data.providers.mt5 import MT5Provider
+from app.data.time_profile import get_metaquotes_demo_phase1_profile
 
 
 def main():
@@ -34,6 +35,7 @@ def main():
     if password: kwargs["password"] = password
     if server: kwargs["server"] = server
     
+    kwargs["time_profile"] = get_metaquotes_demo_phase1_profile()
     provider = MT5Provider(**kwargs)
     try:
         provider.connect()

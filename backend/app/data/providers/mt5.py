@@ -135,14 +135,18 @@ class MT5Provider(DataProvider):
         broker_symbol = self._get_broker_symbol(symbol)
         tf = self.client.map_timeframe(timeframe)
         
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=UTC)
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("Time bounds must be explicitly timezone-aware UTC datetimes. Naive datetimes are rejected.")
+        if start.tzinfo != UTC or end.tzinfo != UTC:
+            # We allow astimezone to UTC if they are aware but not UTC
+            start = start.astimezone(UTC)
+            end = end.astimezone(UTC)
             
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
         
+        if not self._time_profile and isinstance(self.client, RealMT5Client):
+            raise ValueError("Real MT5 ingestion requires an explicit TimeProfile. No-profile fallback is unsafe.")
         dfs = []
         if self._time_profile:
             ranges = self._time_profile.get_subranges(start_utc, end_utc)
@@ -183,28 +187,30 @@ class MT5Provider(DataProvider):
             
         broker_symbol = self._get_broker_symbol(symbol)
         
-        if start.tzinfo is None:
-            start = start.replace(tzinfo=UTC)
-        if end.tzinfo is None:
-            end = end.replace(tzinfo=UTC)
+        if start.tzinfo is None or end.tzinfo is None:
+            raise ValueError("Time bounds must be explicitly timezone-aware UTC datetimes. Naive datetimes are rejected.")
+        if start.tzinfo != UTC or end.tzinfo != UTC:
+            start = start.astimezone(UTC)
+            end = end.astimezone(UTC)
             
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
         
+        if not self._time_profile and isinstance(self.client, RealMT5Client):
+            raise ValueError("Real MT5 ingestion requires an explicit TimeProfile. No-profile fallback is unsafe.")
+            
         dfs = []
         if self._time_profile:
-            import MetaTrader5 as mt5
             ranges = self._time_profile.get_subranges(start_utc, end_utc)
             for r_start, r_end, offset in ranges:
                 req_start = utc_to_mt5_label(r_start, offset)
                 req_end = utc_to_mt5_label(r_end, offset)
                 
-                ticks = self.client.copy_ticks_range(broker_symbol, req_start, req_end, mt5.COPY_TICKS_ALL)
+                ticks = self.client.copy_ticks_range(broker_symbol, req_start, req_end, self.client.get_ticks_all_flag())
                 if ticks is not None and len(ticks) > 0:
                     dfs.append(pd.DataFrame(ticks))
         else:
-            import MetaTrader5 as mt5
-            ticks = self.client.copy_ticks_range(broker_symbol, start_utc, end_utc, mt5.COPY_TICKS_ALL) # type: ignore
+            ticks = self.client.copy_ticks_range(broker_symbol, start_utc, end_utc, self.client.get_ticks_all_flag()) # type: ignore
             if ticks is not None and len(ticks) > 0:
                 dfs.append(pd.DataFrame(ticks))
                 
@@ -214,7 +220,6 @@ class MT5Provider(DataProvider):
             return df
             
         df = pd.concat(dfs, ignore_index=True)
-        
         
         df["symbol"] = symbol
         df["spread"] = df["ask"] - df["bid"]
