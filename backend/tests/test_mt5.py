@@ -359,3 +359,62 @@ def test_ingestion_valid_weekend_closure():
         
     import shutil
     shutil.rmtree(temp_dir)
+
+def test_ingestion_half_open_semantics():
+    from datetime import time
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    temp_dir = Path("test_ingest_halfopen")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    rates = []
+    base_ts = 1672617600 # 2023-01-02 00:00:00 (Monday)
+    # Generate 1440 bars for Jan 2, PLUS 1440 bars for Jan 3
+    for i in range(2880): 
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    config = ConfigurableCalendarConfig(
+        sessions=[SessionWindow(start_day=0, start_time=time(0, 0), end_day=4, end_time=time(23, 59))]
+    )
+    calendar = ConfigurableCalendar(config)
+    
+    # Request exactly Jan 2 (1 day) in 2 chunks of 12 hours
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    # Using 0.5 days doesn't work out of the box if chunk_days is int, wait chunk_days is int.
+    # Actually chunk_days=1 is fine if we just request 2 days with chunk_days=1.
+    end_2days = datetime(2023, 1, 4, tzinfo=UTC)
+    
+    artifact = workflow.download_bars("EURUSD", "M1", start, end_2days, chunk_days=1)
+    
+    # Assert duplicates == 0
+    assert artifact.quality_report.duplicate_bars == 0
+    assert artifact.quality_report.quality_status == "PASS"
+    
+    # Assert canonical data min/max
+    df_canonical = manager.load_canonical(artifact.dataset_id)
+    assert df_canonical['timestamp'].min() == start
+    # Max should be strictly less than end_2days
+    assert df_canonical['timestamp'].max() < end_2days
+    # The last bar should be exactly 1 minute before end_2days
+    from datetime import timedelta
+    assert df_canonical['timestamp'].max() == end_2days - timedelta(minutes=1)
+    
+    # Check length: 2 days of M1 = 2880 bars
+    assert len(df_canonical) == 2880
+    
+    import shutil
+    shutil.rmtree(temp_dir)

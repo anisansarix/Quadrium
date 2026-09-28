@@ -50,7 +50,7 @@ class MT5Downloader:
                 validate_dataframe(df_chunk, expected_symbol=symbol, expected_timeframe=timeframe)
                 # Save raw chunk to disk and free memory
                 raw_path = self.dataset_manager.save_raw(df_chunk, "mt5", symbol, timeframe)
-                chunk_paths.append(raw_path)
+                chunk_paths.append((raw_path, current_start, current_end))
                 
             current_start = current_end
             
@@ -59,7 +59,14 @@ class MT5Downloader:
             
         # Assemble canonical from validated chunks on disk
         # TODO/ADR: For production multi-year ingestion, move to partitioned Parquet and streaming merge instead of pd.concat
-        df_full = pd.concat([pd.read_parquet(p) for p in chunk_paths], ignore_index=True)
+        df_list = []
+        for p, c_start, c_end in chunk_paths:
+            df_p = pd.read_parquet(p)
+            # Normalize MT5 inclusive ranges to requested half-open canonical interval [c_start, c_end)
+            df_p = df_p[(df_p['timestamp'] >= c_start) & (df_p['timestamp'] < c_end)]
+            df_list.append(df_p)
+            
+        df_full = pd.concat(df_list, ignore_index=True)
         
         # Deduplicate and sort
         initial_len = len(df_full)
