@@ -72,8 +72,8 @@ class FakeMT5Client(MT5Client):
             self._last_error = (-1, "No data")
             return None
             
-        start_ts = int(date_from.replace(tzinfo=datetime.UTC).timestamp())
-        end_ts = int(date_to.replace(tzinfo=datetime.UTC).timestamp())
+        start_ts = int(date_from.timestamp() if date_from.tzinfo else date_from.replace(tzinfo=datetime.UTC).timestamp())
+        end_ts = int(date_to.timestamp() if date_to.tzinfo else date_to.replace(tzinfo=datetime.UTC).timestamp())
         filtered = [r for r in self.rates if start_ts <= r[0] <= end_ts]
         
         if not filtered:
@@ -93,8 +93,8 @@ class FakeMT5Client(MT5Client):
             self._last_error = (-1, "No data")
             return None
             
-        start_ts = int(date_from.replace(tzinfo=datetime.UTC).timestamp())
-        end_ts = int(date_to.replace(tzinfo=datetime.UTC).timestamp())
+        start_ts = int(date_from.timestamp() if date_from.tzinfo else date_from.replace(tzinfo=datetime.UTC).timestamp())
+        end_ts = int(date_to.timestamp() if date_to.tzinfo else date_to.replace(tzinfo=datetime.UTC).timestamp())
         filtered = [t for t in self.ticks if start_ts <= t[0] <= end_ts]
         
         if not filtered:
@@ -121,3 +121,4 @@ class FakeMT5Client(MT5Client):
 
     def get_ticks_all_flag(self) -> int:
         return -1
+

@@ -1,16 +1,17 @@
+import json
 import os
 import sys
-import json
-from datetime import datetime, time, timezone
+from datetime import UTC, datetime, time
 from pathlib import Path
 
 from app.data.catalog import DatasetCatalog
+from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
 from app.data.datasets import DatasetManager
 from app.data.downloader import MT5Downloader
-from app.data.providers.mt5_client import RealMT5Client
+from app.data.mt5_validation import MarginModel, validate_calculations
 from app.data.providers.mt5 import MT5Provider
-from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
-from app.data.mt5_validation import validate_calculations, MarginModel
+from app.data.providers.mt5_client import RealMT5Client
+
 
 def main():
     print("Starting MT5 Smoke Test...")
@@ -20,8 +21,8 @@ def main():
     server = os.environ.get("QUADRIUM_MT5_SERVER")
     path = os.environ.get("QUADRIUM_MT5_PATH")
     
-    start_ts = datetime(2026, 9, 24, 0, 0, tzinfo=timezone.utc)
-    end_ts = datetime(2026, 9, 25, 0, 0, tzinfo=timezone.utc)
+    start_ts = datetime(2026, 9, 24, 0, 0, tzinfo=UTC)
+    end_ts = datetime(2026, 9, 25, 0, 0, tzinfo=UTC)
     
     calendar_config = ConfigurableCalendarConfig(
         sessions=[SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))]
@@ -44,7 +45,7 @@ def main():
             
         provider = MT5Provider(client=client)
         provider.connect()
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001
         print(f"FAIL: MT5Provider connect failed: {e}")
         sys.exit(1)
         
@@ -105,7 +106,7 @@ def main():
         error_msg = None
         try:
             artifact = downloader.download_bars(symbol, "M1", start_ts, end_ts)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             error_msg = str(e)
             print(f"FAIL: Dataset ingestion failed: {e}")
             
@@ -114,7 +115,7 @@ def main():
         print(f"Requested End: {end_ts}")
         
         report_status = "FAIL" if error_msg else "PASS"
-        date_str = datetime.now().strftime('%Y%m%d_%H%M%S')
+        date_str = datetime.now(UTC).strftime('%Y%m%d_%H%M%S')
         report_path = Path(f"docs/MT5_SMOKE_TEST_{date_str}.md")
         report_path.parent.mkdir(exist_ok=True, parents=True)
         
@@ -192,3 +193,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+

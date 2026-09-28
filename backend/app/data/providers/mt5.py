@@ -141,11 +141,13 @@ class MT5Provider(DataProvider):
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
         
-        # In MT5, copy_rates_range takes naive datetimes but assumes they are in UTC
-        rates = self.client.copy_rates_range(broker_symbol, tf, start_utc.replace(tzinfo=None), end_utc.replace(tzinfo=None))
+        # Pass UTC-aware datetimes directly through the client
+        rates = self.client.copy_rates_range(broker_symbol, tf, start_utc, end_utc)
         if rates is None or len(rates) == 0:
             return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"])
             
+        print(f"DIAGNOSTIC: MT5 API raw first epoch: {rates['time'][0]}, raw last epoch: {rates['time'][-1]}")
+        
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
         
@@ -182,10 +184,12 @@ class MT5Provider(DataProvider):
         
         flags = self.client.get_ticks_all_flag()
             
-        ticks = self.client.copy_ticks_range(broker_symbol, start_utc.replace(tzinfo=None), end_utc.replace(tzinfo=None), flags)
+        ticks = self.client.copy_ticks_range(broker_symbol, start_utc, end_utc, flags)
         if ticks is None or len(ticks) == 0:
             return pd.DataFrame(columns=["timestamp", "bid", "ask", "last", "volume", "flags"])
             
+        print(f"DIAGNOSTIC: MT5 API ticks raw first epoch: {ticks['time'][0]}, raw last epoch: {ticks['time'][-1]}")
+        
         df = pd.DataFrame(ticks)
         df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
         

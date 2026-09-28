@@ -417,3 +417,34 @@ def test_ingestion_half_open_semantics():
     
     import shutil
     shutil.rmtree(temp_dir)
+
+def test_mt5_provider_preserves_utc():
+    from datetime import UTC, datetime
+
+    from app.data.providers.mt5 import MT5Provider
+    
+    class MockMT5ClientForTZ(FakeMT5Client):
+        def __init__(self):
+            super().__init__()
+            self.received_start = None
+            self.received_end = None
+            
+        def copy_rates_range(self, symbol, timeframe, date_from, date_to):
+            self.received_start = date_from
+            self.received_end = date_to
+            return super().copy_rates_range(symbol, timeframe, date_from, date_to)
+            
+    client = MockMT5ClientForTZ()
+    client.rates = [(1672617600, 1.0, 1.0, 1.0, 1.0, 100, 10, 100)]
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    start_utc = datetime(2023, 1, 2, tzinfo=UTC)
+    end_utc = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    provider.fetch_bars("EURUSD", "M1", start_utc, end_utc)
+    
+    assert client.received_start is not None
+    assert client.received_start.tzinfo == UTC
+    assert client.received_end.tzinfo == UTC
+    assert client.received_start == start_utc
