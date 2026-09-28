@@ -96,7 +96,6 @@ class MT5Downloader:
             unexpected_missing_bars=gap_report.unexpected_missing_bars,
             known_closure_bars=gap_report.known_closures_bars,
             duplicate_bars=int(duplicates_count),
-            invalid_rows=0, # Assuming schema validated
             quality_status=cast(Literal["PASS", "WARNING", "FAIL"], quality_status)
         )
         

@@ -392,7 +392,6 @@ def test_ingestion_half_open_semantics():
     # Request exactly Jan 2 (1 day) in 2 chunks of 12 hours
     workflow = MT5Downloader(provider, manager, catalog, calendar)
     start = datetime(2023, 1, 2, tzinfo=UTC)
-    end = datetime(2023, 1, 3, tzinfo=UTC)
     
     # Using 0.5 days doesn't work out of the box if chunk_days is int, wait chunk_days is int.
     # Actually chunk_days=1 is fine if we just request 2 days with chunk_days=1.

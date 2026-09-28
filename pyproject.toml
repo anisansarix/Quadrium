@@ -30,7 +30,7 @@ dev = [
     "mypy>=1.9.0"
 ]
 mt5 = [
-    "MetaTrader5>=5.0.45"
+    "MetaTrader5>=5.0.45; sys_platform == 'win32'"
 ]
 
 [tool.ruff]
