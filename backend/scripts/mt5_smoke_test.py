@@ -1,4 +1,3 @@
-import json
 import os
 import sys
 from datetime import UTC, datetime, time
@@ -98,81 +97,96 @@ def main():
         
         artifact = None
         error_msg = None
+        val_report = None
         try:
             artifact = downloader.download_bars(symbol, "M1", start_ts, end_ts)
-        except Exception as e:  # noqa: BLE001
-            error_msg = str(e)
-            print(f"FAIL: Dataset ingestion failed: {e}")
             
-        print("\n--- Acceptance Summary ---")
-        print(f"Requested Start: {start_ts}")
-        print(f"Requested End: {end_ts}")
-        
-        report_status = "FAIL" if error_msg else "PASS"
-        date_str = datetime.now(UTC).strftime('%Y%m%d_%H%M%S')
-        report_path = Path(f"docs/MT5_SMOKE_TEST_{date_str}.md")
-        report_path.parent.mkdir(exist_ok=True, parents=True)
-        
-        report = "# MT5 Smoke Test Report (" + date_str + ")\n\n"
-        report += "## Terminal/Broker Metadata\n"
-        report += f"- **Company**: {account.company}\n"
-        report += f"- **Server**: {account.server}\n"
-        report += f"- **Account Currency**: {account.currency}\n"
-        report += f"- **Leverage**: {account.leverage}\n\n"
-        
-        report += "## Symbol Metadata (EURUSD)\n"
-        report += f"- **Digits**: {sym_info.digits}\n"
-        report += f"- **Point**: {sym_info.point}\n"
-        report += f"- **Tick Size**: {sym_info.trade_tick_size}\n"
-        report += f"- **Tick Value**: {sym_info.trade_tick_value}\n"
-        report += f"- **Contract Size**: {sym_info.trade_contract_size}\n"
-        report += f"- **Calc Mode**: {sym_info.trade_calc_mode}\n\n"
-        
-        report += "## Ingestion Details\n"
-        report += f"- **Requested Interval**: {start_ts} to {end_ts}\n"
-        report += f"- **Calendar Configuration**: {json.dumps(calendar_config.model_dump(), default=str)}\n"
-        
-        if artifact:
-            df_canonical = manager.load_canonical(artifact.dataset_id)
-            print(f"Canonical Start: {df_canonical['timestamp'].min()}")
-            print(f"Canonical End: {df_canonical['timestamp'].max()}")
-            print(f"Observed Bars: {artifact.quality_report.observed_bars}")
-            print(f"Expected Bars: {artifact.quality_report.expected_bars}")
-            print(f"Unexpected Missing: {artifact.quality_report.unexpected_missing_bars}")
-            print(f"Known Closure: {artifact.quality_report.known_closure_bars}")
-            print(f"Duplicate Bars: {artifact.quality_report.duplicate_bars}")
-            print(f"Coverage Status: {artifact.quality_report.coverage_status}")
-            print(f"Quality Status: {artifact.quality_report.quality_status}")
-            print(f"Dataset ID: {artifact.dataset_id}")
-            print(f"Dataset Hash: {artifact.dataset_hash}")
-            print(f"Canonical Path: {artifact.canonical_path}")
-            
-            report += f"- **Canonical Start**: {df_canonical['timestamp'].min()}\n"
-            report += f"- **Canonical End**: {df_canonical['timestamp'].max()}\n"
-            report += f"- **Dataset ID**: {artifact.dataset_id}\n"
-            report += f"- **Dataset Hash**: {artifact.dataset_hash}\n"
-            report += f"- **Canonical Path**: {artifact.canonical_path}\n"
-            report += "- **Data Quality Report**:\n`json\n"
-            report += artifact.quality_report.model_dump_json(indent=2)
-            report += "\n`\n"
-
-            print("\n--- Calculation Validation ---")
+            # If we get here, ingestion passed. Now do calculation validation.
             margin_model = MarginModel(
                 leverage=float(account.leverage),
                 account_currency=account.currency,
                 margin_calculation_mode=str(sym_info.trade_calc_mode)
             )
-            
             val_report = validate_calculations(client, symbol, spec, margin_model)
-            print(f"All calculations passed: {val_report.all_passed}")
             
-            report += "\n## Calculation Validation\n"
-            report += f"- **Margin Model**: {json.dumps(margin_model.model_dump())}\n"
-            report += f"- **All Passed**: {val_report.all_passed}\n"
+        except Exception as e:  # noqa: BLE001
+            error_msg = str(e)
+            print(f"FAIL: Dataset ingestion or validation failed: {e}")
+            
+        print("\n--- Acceptance Summary ---")
+        print(f"Requested Start: {start_ts}")
+        print(f"Requested End: {end_ts}")
+        
+        # The overall gate:
+        # artifact must exist, error_msg must be None, quality_status == PASS, val_report.all_passed == True
+        passed_quality = artifact and artifact.quality_report.quality_status == "PASS"
+        passed_calc = val_report and val_report.all_passed
+        
+        report_status = "PASS" if (not error_msg and passed_quality and passed_calc) else "FAIL"
+        
+        date_str = datetime.now(UTC).strftime('%Y%m%d_%H%M%S')
+        report_path = Path(f"docs/MT5_SMOKE_TEST_{date_str}.md")
+        report_path.parent.mkdir(exist_ok=True, parents=True)
+        
+        balance = getattr(account, 'balance', 'N/A')
+        
+        report = f"""# MT5 Smoke Test Report ({date_str})\n\n"""
+        report += """## ACCOUNT\n"""
+        report += f"""- **Balance**: {balance}\n"""
+        report += f"""- **Currency**: {account.currency}\n"""
+        report += f"""- **Leverage**: {account.leverage}\n"""
+        report += f"""- **Broker**: {account.company}\n"""
+        report += f"""- **Server**: {account.server}\n\n"""
+
+        report += """## INSTRUMENT\n"""
+        report += f"""- **Symbol**: {symbol}\n"""
+        report += f"""- **Contract Size**: {sym_info.trade_contract_size}\n"""
+        report += f"""- **Digits**: {sym_info.digits}\n"""
+        report += f"""- **Tick Size**: {sym_info.trade_tick_size}\n"""
+        report += f"""- **Tick Value**: {sym_info.trade_tick_value}\n"""
+        report += f"""- **Margin Currency**: {sym_info.currency_margin}\n"""
+        report += f"""- **Profit Currency**: {sym_info.currency_profit}\n"""
+        report += f"""- **Calc Mode**: {sym_info.trade_calc_mode}\n\n"""
+
+        report += """## DATA\n"""
+        report += f"""- **Requested Interval**: {start_ts} to {end_ts}\n"""
+        
+        if artifact:
+            df_canonical = manager.load_canonical(artifact.dataset_id)
+            qr = artifact.quality_report
+            report += f"""- **Canonical Interval**: {df_canonical['timestamp'].min()} to {df_canonical['timestamp'].max()}\n"""
+            report += f"""- **Expected Bars**: {qr.expected_bars}\n"""
+            report += f"""- **Observed Bars**: {qr.observed_bars}\n"""
+            report += f"""- **Sparse Bars**: {qr.source_sparse_bars}\n"""
+            report += f"""- **Ticks-Present/Bar-Missing**: {qr.ticks_present_bar_missing}\n"""
+            report += f"""- **Duplicates**: {qr.duplicate_bars}\n"""
+            report += f"""- **Coverage**: {qr.coverage_status}\n"""
+            report += f"""- **Quality**: {qr.quality_status}\n"""
         else:
-            report += f"\n## Error\nIngestion failed: {error_msg}\n"
+            report += f"Ingestion Failed: {error_msg}\n"
             
-        report += f"\n## Status\n**{report_status}**\n"
+        report += "\n## CALCULATIONS\n"
+        if val_report:
+            prof_pass = all(d.passed for d in val_report.profit_diffs)
+            marg_pass = all(d.passed for d in val_report.margin_diffs)
+            report += f"- **Profit Validation**: {'PASS' if prof_pass else 'FAIL'}\n"
+            report += f"- **Margin Validation**: {'PASS' if marg_pass else 'FAIL'}\n\n"
+            
+            report += "### Profit Scenarios\n"
+            report += "| Action | Volume | Open | Close | Quadrium | MT5 | Abs Diff | Rel Diff | Tol | Passed | Unsupported |\n"
+            report += "|---|---|---|---|---|---|---|---|---|---|---|\n"
+            for d in val_report.profit_diffs:
+                report += f"| {d.action} | {d.volume} | {d.price_open} | {d.price_close} | {d.quadrium_val} | {d.mt5_val} | {d.diff_abs} | {d.diff_rel} | {d.tolerance} | {d.passed} | {d.unsupported} |\n"
+                
+            report += "\n### Margin Scenarios\n"
+            report += "| Action | Volume | Open | Close | Quadrium | MT5 | Abs Diff | Rel Diff | Tol | Passed | Unsupported |\n"
+            report += "|---|---|---|---|---|---|---|---|---|---|---|\n"
+            for d in val_report.margin_diffs:
+                report += f"| {d.action} | {d.volume} | {d.price_open} | {d.price_close} | {d.quadrium_val} | {d.mt5_val} | {d.diff_abs} | {d.diff_rel} | {d.tolerance} | {d.passed} | {d.unsupported} |\n"
+        else:
+            report += "Calculations not run due to prior failure.\n"
+            
+        report += f"\n## FINAL\n**{report_status}**\n"
         
         report_path.write_text(report)
         print(f"\nReport written to {report_path}")
@@ -181,6 +195,7 @@ def main():
             sys.exit(1)
         else:
             print("\nPASS: MT5 Smoke Test completed successfully.")
+
             
     finally:
         provider.disconnect()
