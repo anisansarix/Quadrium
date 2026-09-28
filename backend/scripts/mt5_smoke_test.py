@@ -105,7 +105,9 @@ def main():
             margin_model = MarginModel(
                 leverage=float(account.leverage),
                 account_currency=account.currency,
-                margin_calculation_mode=str(sym_info.trade_calc_mode)
+                margin_calculation_mode=str(sym_info.trade_calc_mode),
+                margin_rate=1.0,
+                account_currency_decimals=2
             )
             val_report = validate_calculations(client, symbol, spec, margin_model)
             
@@ -179,10 +181,10 @@ def main():
                 report += f"| {d.action} | {d.volume} | {d.price_open} | {d.price_close} | {d.quadrium_val} | {d.mt5_val} | {d.diff_abs} | {d.diff_rel} | {d.tolerance} | {d.passed} | {d.unsupported} |\n"
                 
             report += "\n### Margin Scenarios\n"
-            report += "| Action | Volume | Open | Close | Quadrium | MT5 | Abs Diff | Rel Diff | Tol | Passed | Unsupported |\n"
-            report += "|---|---|---|---|---|---|---|---|---|---|---|\n"
+            report += "| Action | Volume | Open | Close | Quadrium Raw | Quadrium Norm | MT5 | Diff Raw | Diff Norm | Rate | Prec | Tol | Passed | Unsupported |\n"
+            report += "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n"
             for d in val_report.margin_diffs:
-                report += f"| {d.action} | {d.volume} | {d.price_open} | {d.price_close} | {d.quadrium_val} | {d.mt5_val} | {d.diff_abs} | {d.diff_rel} | {d.tolerance} | {d.passed} | {d.unsupported} |\n"
+                report += f"| {d.action} | {d.volume} | {d.price_open} | {d.price_close} | {d.theoretical_margin_raw} | {d.theoretical_margin_normalized} | {d.mt5_margin} | {d.diff_raw} | {d.diff_normalized} | {d.margin_rate} | {d.currency_precision} | {d.tolerance} | {d.passed} | {d.unsupported} |\n"
         else:
             report += "Calculations not run due to prior failure.\n"
             

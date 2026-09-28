@@ -1,3 +1,4 @@
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from pydantic import BaseModel
@@ -6,7 +7,7 @@ from app.data.providers.mt5_client import MT5Client
 from app.domain.models import InstrumentSpec
 
 
-class ValidationDiff(BaseModel):
+class ProfitValidationDiff(BaseModel):
     action: str
     volume: float
     price_open: float
@@ -19,19 +20,39 @@ class ValidationDiff(BaseModel):
     passed: bool
     unsupported: bool = False
 
-class ValidationReport(BaseModel):
-    symbol: str
-    leverage: float
-    account_currency: str
-    margin_calculation_mode: str
-    profit_diffs: list[ValidationDiff]
-    margin_diffs: list[ValidationDiff]
-    all_passed: bool
+class MarginValidationDiff(BaseModel):
+    action: str
+    volume: float
+    price_open: float
+    price_close: float
+    theoretical_margin_raw: float | None
+    theoretical_margin_normalized: float | None
+    mt5_margin: float | None
+    diff_raw: float | None
+    diff_normalized: float | None
+    currency_precision: int
+    margin_rate: float
+    tolerance: float
+    passed: bool
+    unsupported: bool = False
 
 class MarginModel(BaseModel):
     leverage: float
     account_currency: str
     margin_calculation_mode: str
+    margin_rate: float
+    account_currency_decimals: int
+
+class ValidationReport(BaseModel):
+    symbol: str
+    leverage: float
+    account_currency: str
+    margin_calculation_mode: str
+    margin_rate: float
+    account_currency_decimals: int
+    profit_diffs: list[ProfitValidationDiff]
+    margin_diffs: list[MarginValidationDiff]
+    all_passed: bool
 
 def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, margin_model: MarginModel) -> ValidationReport:
     profit_diffs = []
@@ -48,6 +69,19 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
     tolerance = 1e-4
     all_passed = True
     
+    if margin_model.margin_rate <= 0:
+        return ValidationReport(
+            symbol=symbol,
+            leverage=margin_model.leverage,
+            account_currency=margin_model.account_currency,
+            margin_calculation_mode=margin_model.margin_calculation_mode,
+            margin_rate=margin_model.margin_rate,
+            account_currency_decimals=margin_model.account_currency_decimals,
+            profit_diffs=[],
+            margin_diffs=[],
+            all_passed=False
+        )
+    
     for s in scenarios:
         mt5_prof = client.order_calc_profit(s["action"], symbol, s["volume"], s["price_open"], s["price_close"])
         
@@ -62,7 +96,7 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
             passed = diff_abs <= tolerance
             if not passed: all_passed = False
             
-            profit_diffs.append(ValidationDiff(
+            profit_diffs.append(ProfitValidationDiff(
                 action="BUY" if s["action"] == 0 else "SELL",
                 volume=s["volume"],
                 price_open=s["price_open"],
@@ -77,37 +111,46 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
             
         mt5_margin = client.order_calc_margin(s["action"], symbol, s["volume"], s["price_open"])
         if margin_model.margin_calculation_mode not in ["FOREX", "0"]:
-            quad_margin = None
-            diff_abs = None
-            diff_rel = None
+            theoretical_raw = None
+            theoretical_norm = None
+            diff_raw = None
+            diff_norm = None
             passed = False
             unsupported = True
             all_passed = False
         else:
-            quad_margin = (s["price_open"] * spec.contract_size * s["volume"]) / margin_model.leverage
+            theoretical_raw = (s["price_open"] * spec.contract_size * s["volume"]) / margin_model.leverage * margin_model.margin_rate
+            
+            quant_str = "1." + "0" * margin_model.account_currency_decimals if margin_model.account_currency_decimals > 0 else "1"
+            theoretical_norm = float(Decimal(str(theoretical_raw)).quantize(Decimal(quant_str), rounding=ROUND_HALF_UP))
+            
             if mt5_margin is not None:
-                diff_abs = abs(quad_margin - mt5_margin)
-                diff_rel = diff_abs / abs(mt5_margin) if mt5_margin != 0 else diff_abs
-                passed = diff_abs <= tolerance
+                diff_raw = abs(theoretical_raw - mt5_margin)
+                diff_norm = abs(theoretical_norm - mt5_margin)
+                
+                passed = diff_norm <= tolerance
                 unsupported = False
                 if not passed: all_passed = False
             else:
-                diff_abs = None
-                diff_rel = None
+                diff_raw = None
+                diff_norm = None
                 passed = False
                 unsupported = False
                 all_passed = False
                 
         if mt5_margin is not None or unsupported:
-            margin_diffs.append(ValidationDiff(
+            margin_diffs.append(MarginValidationDiff(
                 action="BUY" if s["action"] == 0 else "SELL",
                 volume=s["volume"],
                 price_open=s["price_open"],
                 price_close=s["price_close"],
-                quadrium_val=quad_margin,
-                mt5_val=mt5_margin,
-                diff_abs=diff_abs,
-                diff_rel=diff_rel,
+                theoretical_margin_raw=theoretical_raw,
+                theoretical_margin_normalized=theoretical_norm,
+                mt5_margin=mt5_margin,
+                diff_raw=diff_raw,
+                diff_normalized=diff_norm,
+                currency_precision=margin_model.account_currency_decimals,
+                margin_rate=margin_model.margin_rate,
                 tolerance=tolerance,
                 passed=passed,
                 unsupported=unsupported
@@ -118,6 +161,8 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
         leverage=margin_model.leverage,
         account_currency=margin_model.account_currency,
         margin_calculation_mode=margin_model.margin_calculation_mode,
+        margin_rate=margin_model.margin_rate,
+        account_currency_decimals=margin_model.account_currency_decimals,
         profit_diffs=profit_diffs, 
         margin_diffs=margin_diffs, 
         all_passed=all_passed
