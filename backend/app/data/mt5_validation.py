@@ -11,12 +11,13 @@ class ValidationDiff(BaseModel):
     volume: float
     price_open: float
     price_close: float
-    quadrium_val: float
-    mt5_val: float
-    diff_abs: float
-    diff_rel: float
+    quadrium_val: float | None
+    mt5_val: float | None
+    diff_abs: float | None
+    diff_rel: float | None
     tolerance: float
     passed: bool
+    unsupported: bool = False
 
 class ValidationReport(BaseModel):
     symbol: str
@@ -75,14 +76,29 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
             ))
             
         mt5_margin = client.order_calc_margin(s["action"], symbol, s["volume"], s["price_open"])
-        quad_margin = (s["price_open"] * spec.contract_size * s["volume"]) / margin_model.leverage
-        
-        if mt5_margin is not None:
-            diff_abs = abs(quad_margin - mt5_margin)
-            diff_rel = diff_abs / abs(mt5_margin) if mt5_margin != 0 else diff_abs
-            passed = diff_abs <= tolerance
-            if not passed: all_passed = False
-            
+        if margin_model.margin_calculation_mode not in ["FOREX", "0"]:
+            quad_margin = None
+            diff_abs = None
+            diff_rel = None
+            passed = False
+            unsupported = True
+            all_passed = False
+        else:
+            quad_margin = (s["price_open"] * spec.contract_size * s["volume"]) / margin_model.leverage
+            if mt5_margin is not None:
+                diff_abs = abs(quad_margin - mt5_margin)
+                diff_rel = diff_abs / abs(mt5_margin) if mt5_margin != 0 else diff_abs
+                passed = diff_abs <= tolerance
+                unsupported = False
+                if not passed: all_passed = False
+            else:
+                diff_abs = None
+                diff_rel = None
+                passed = False
+                unsupported = False
+                all_passed = False
+                
+        if mt5_margin is not None or unsupported:
             margin_diffs.append(ValidationDiff(
                 action="BUY" if s["action"] == 0 else "SELL",
                 volume=s["volume"],
@@ -93,7 +109,8 @@ def validate_calculations(client: MT5Client, symbol: str, spec: InstrumentSpec, 
                 diff_abs=diff_abs,
                 diff_rel=diff_rel,
                 tolerance=tolerance,
-                passed=passed
+                passed=passed,
+                unsupported=unsupported
             ))
             
     return ValidationReport(

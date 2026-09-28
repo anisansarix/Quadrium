@@ -10,5 +10,7 @@ class DataQualityReport(BaseModel):
     unexpected_missing_bars: int
     known_closure_bars: int
     duplicate_bars: int
+    # invalid_rows is 0 here because invalid rows (schema/OHLC errors) are precondition failures
+    # that cause validation to throw before reaching DatasetArtifact generation.
     invalid_rows: int
     quality_status: Literal["PASS", "WARNING", "FAIL"]

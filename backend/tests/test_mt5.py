@@ -118,8 +118,17 @@ def test_end_to_end_ingestion():
     provider = MT5Provider(client=client)
     provider.connect()
     
-    workflow = MT5Downloader(provider, manager, catalog)
-    start = datetime(2023, 1, 1, tzinfo=UTC)
+    from datetime import time
+
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    config = ConfigurableCalendarConfig(
+        sessions=[
+            SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))
+        ]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
     end = datetime(2023, 1, 3, tzinfo=UTC)
     
     artifact = workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
@@ -168,8 +177,17 @@ def test_ingestion_fails_internal_gap():
     provider = MT5Provider(client=client)
     provider.connect()
     
-    workflow = MT5Downloader(provider, manager, catalog)
-    start = datetime(2023, 1, 1, tzinfo=UTC)
+    from datetime import time
+
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    config = ConfigurableCalendarConfig(
+        sessions=[
+            SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))
+        ]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
     end = datetime(2023, 1, 3, tzinfo=UTC)
     
     with pytest.raises(ValueError, match="Dataset ingestion failed quality checks"):
@@ -201,12 +219,143 @@ def test_ingestion_fails_duplicate():
     provider = MT5Provider(client=client)
     provider.connect()
     
-    workflow = MT5Downloader(provider, manager, catalog)
-    start = datetime(2023, 1, 1, tzinfo=UTC)
+    from datetime import time
+
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    config = ConfigurableCalendarConfig(
+        sessions=[
+            SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))
+        ]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
     end = datetime(2023, 1, 3, tzinfo=UTC)
     
     with pytest.raises(ValueError, match="Duplicate timestamps found"):
         workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+        
+    import shutil
+    shutil.rmtree(temp_dir)
+
+def test_ingestion_fails_missing_first_bar():
+    from datetime import time
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    temp_dir = Path("test_ingest_first")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    rates = []
+    base_ts = 1672617600
+    for i in range(1, 1440): # Skip 0
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    config = ConfigurableCalendarConfig(
+        sessions=[SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    with pytest.raises(ValueError, match="Dataset ingestion failed quality checks"):
+        workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+        
+    import shutil
+    shutil.rmtree(temp_dir)
+
+def test_ingestion_fails_missing_last_bar():
+    from datetime import time
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    temp_dir = Path("test_ingest_last")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    rates = []
+    base_ts = 1672617600
+    for i in range(1439): # Skip 1439 (last)
+        rates.append((base_ts + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+    client.rates = rates
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    config = ConfigurableCalendarConfig(
+        sessions=[SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 2, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    with pytest.raises(ValueError, match="Dataset ingestion failed quality checks"):
+        workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+        
+    import shutil
+    shutil.rmtree(temp_dir)
+
+def test_ingestion_valid_weekend_closure():
+    from datetime import time
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    temp_dir = Path("test_ingest_weekend")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    rates = []
+    
+    # Friday 2023-01-06 00:00 to 22:00
+    base_fri = 1672963200
+    for i in range(22 * 60):
+        rates.append((base_fri + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+        
+    # Sunday 2023-01-08 22:00 to 24:00
+    base_sun = 1673215200
+    for i in range(2 * 60):
+        rates.append((base_sun + i * 60, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100))
+        
+    client.rates = rates
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    config = ConfigurableCalendarConfig(
+        sessions=[SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))]
+    )
+    calendar = ConfigurableCalendar(config)
+    workflow = MT5Downloader(provider, manager, catalog, calendar)
+    start = datetime(2023, 1, 6, tzinfo=UTC)
+    end = datetime(2023, 1, 9, tzinfo=UTC)
+    
+    artifact = workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+    
+    assert artifact.quality_report.quality_status == "PASS"
+    assert artifact.quality_report.coverage_status == "FULL"
+    assert artifact.quality_report.unexpected_missing_bars == 0
         
     import shutil
     shutil.rmtree(temp_dir)

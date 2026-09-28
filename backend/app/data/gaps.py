@@ -3,7 +3,7 @@ from datetime import datetime
 import pandas as pd
 from pydantic import BaseModel
 
-from app.data.coverage import DataCalendar, FXCalendar
+from app.data.coverage import DataCalendar
 
 
 class MissingInterval(BaseModel):
@@ -21,10 +21,7 @@ class GapReport(BaseModel):
     known_closures_bars: int
     unexpected_missing_bars: int
 
-def analyze_gaps(df: pd.DataFrame, timeframe: str, start: datetime, end: datetime, calendar: DataCalendar | None = None) -> GapReport:
-    if calendar is None:
-        calendar = FXCalendar()
-        
+def analyze_gaps(df: pd.DataFrame, timeframe: str, start: datetime, end: datetime, calendar: DataCalendar) -> GapReport:
     freq_map = {"M1": "1min", "M5": "5min"}
     if timeframe not in freq_map:
         return GapReport(expected_bars=0, observed_bars=0, missing_bars=0, missing_intervals=[], weekend_bars=0, known_closures_bars=0, unexpected_missing_bars=0)

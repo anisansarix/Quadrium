@@ -4,6 +4,7 @@ import pandas as pd
 from pydantic import BaseModel
 
 from app.data.catalog import DatasetCatalog
+from app.data.coverage import DataCalendar
 from app.data.datasets import DatasetManager
 from app.data.gaps import GapReport, analyze_gaps
 from app.data.providers.base import DataProvider
@@ -21,10 +22,11 @@ class DatasetArtifact(BaseModel):
     quality_report: DataQualityReport
 
 class MT5Downloader:
-    def __init__(self, provider: DataProvider, dataset_manager: DatasetManager, catalog: DatasetCatalog):
+    def __init__(self, provider: DataProvider, dataset_manager: DatasetManager, catalog: DatasetCatalog, calendar: "DataCalendar"):
         self.provider = provider
         self.dataset_manager = dataset_manager
         self.catalog = catalog
+        self.calendar = calendar
         
     def download_bars(
         self, 
@@ -65,11 +67,11 @@ class MT5Downloader:
         duplicates_count = initial_len - len(df_full)
         
         # Gap report
-        gap_report = analyze_gaps(df_full, timeframe, start, end)
+        gap_report = analyze_gaps(df_full, timeframe, start, end, self.calendar)
         
         # Evaluate coverage
         from app.data.coverage import evaluate_coverage
-        coverage_status, _expected_timestamps = evaluate_coverage(df_full, start, end, timeframe)
+        coverage_status, _expected_timestamps = evaluate_coverage(df_full, start, end, timeframe, self.calendar)
         
         quality_status = "PASS"
         if coverage_status != "FULL":
@@ -78,8 +80,7 @@ class MT5Downloader:
         if gap_report.unexpected_missing_bars > 0:
             quality_status = "FAIL"
             
-        from typing import cast
-        from typing import Literal
+        from typing import Literal, cast
         
         quality_report = DataQualityReport(
             coverage_status=cast(Literal["FULL", "PARTIAL", "EMPTY"], coverage_status),
