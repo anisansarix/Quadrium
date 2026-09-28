@@ -7,17 +7,26 @@ from gymnasium import spaces
 from app.core.decision_pipeline import DecisionPipeline
 from app.domain.models import Quote, RiskContext, RiskPolicy, TargetPosition
 from app.simulator.engine import SimulatorEngine
+from app.envs.reward import RewardModel, LogEquityChangeReward
 
 
 class TradingEnv(gym.Env):
     metadata = {"render_modes": ["human"]}  # noqa: RUF012
 
-    def __init__(self, simulator: SimulatorEngine, pipeline: DecisionPipeline, policy: RiskPolicy, data: list[Quote]):
+    def __init__(
+        self,
+        simulator: SimulatorEngine,
+        pipeline: DecisionPipeline,
+        policy: RiskPolicy,
+        data: list[Quote],
+        reward_model: RewardModel | None = None
+    ):
         super().__init__()
         self.simulator = simulator
         self.pipeline = pipeline
         self.policy = policy
         self.data = data
+        self.reward_model = reward_model or LogEquityChangeReward()
         self.current_step = 0
         self.start_of_day_equity = 10000.0
         self.equity_peak = 10000.0
@@ -46,35 +55,34 @@ class TradingEnv(gym.Env):
     def step(self, action):
         target_weight = float(action[0])
         
-        # Build context
-        q = self.data[self.current_step]
-        spec = self.simulator.instruments.get(q.symbol)
+        # t: context
+        q_t = self.data[self.current_step]
+        spec = self.simulator.instruments.get(q_t.symbol)
         
         context = RiskContext(
             account=self.simulator.get_account_snapshot(),
             open_positions=self.simulator.positions,
-            current_quote=q,
+            current_quote=q_t,
             instrument=spec,
             start_of_day_equity=self.start_of_day_equity,
             equity_peak=self.equity_peak,
-            current_time=q.timestamp
+            current_time=q_t.timestamp
         )
         
-        target = TargetPosition(symbol=q.symbol, target_weight=target_weight)
+        target = TargetPosition(symbol=q_t.symbol, target_weight=target_weight)
         
-        # Pipeline execution
+        prev_account = context.account
+        
+        # t: pipeline execution and fill
         approved_order = self.pipeline.process(target, context, self.policy)
         if approved_order:
             self.simulator.submit_order(approved_order)
             
-        self.current_step += 1
-        terminated = self.current_step >= len(self.data) - 1
-        truncated = False
-        
-        # Update peak equity
+        # Update peak equity after action
         self.equity_peak = max(self.equity_peak, self.simulator.equity)
         
-        reward = 0.0 # Define properly later
+        current_account = self.simulator.get_account_snapshot()
+        reward = self.reward_model.calculate_reward(prev_account, current_account)
         
         info = {
             "equity": self.simulator.equity,
@@ -82,9 +90,15 @@ class TradingEnv(gym.Env):
             "drawdown": (self.equity_peak - self.simulator.equity) / self.equity_peak if self.equity_peak > 0 else 0,
         }
         
+        # Advance to t+1
+        self.current_step += 1
+        terminated = self.current_step >= len(self.data) - 1
+        truncated = False
+        
         if not terminated:
-            self.simulator.update_quote(self.data[self.current_step])
-            obs = np.array([self.data[self.current_step].bid, self.data[self.current_step].ask], dtype=np.float32)
+            q_next = self.data[self.current_step]
+            self.simulator.update_quote(q_next)
+            obs = np.array([q_next.bid, q_next.ask], dtype=np.float32)
         else:
             obs = np.zeros(2, dtype=np.float32)
             
