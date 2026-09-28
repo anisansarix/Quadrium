@@ -73,7 +73,7 @@ def test_full_deterministic_research_flow() -> None:
                 current_time=q.timestamp
             )
             
-            approved = pipeline.process(target_pos, context, policy)
+            approved, _decision = pipeline.process(target_pos, context, policy)
             if approved:
                 res = sim.submit_order(approved)
                 if res.success and res.fills:

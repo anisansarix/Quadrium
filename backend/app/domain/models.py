@@ -189,7 +189,8 @@ class ClosedTrade(BaseModel):
     entry_volume: float
     exit_volume: float
     gross_pnl: float
-    commission: float
+    entry_commission: float
+    exit_commission: float
     swap: float
     net_pnl: float
     holding_seconds: float
@@ -238,10 +239,16 @@ class ExperimentResult(BaseModel):
     metrics: dict[str, Any] | None = None
     artifacts: list[str] = []
 
+class SimulationEvent(BaseModel):
+    timestamp: datetime
+    fills: list[Fill] = []
+    closed_trades: list[ClosedTrade] = []
+    risk_events: list[RiskDecision] = []
+
 class BacktestResult(BaseModel):
     experiment_result: ExperimentResult
-    equity_curve: list[Any]
-    closed_trades: list[Any]
-    executions: list[Any]
-    risk_events: list[Any]
+    equity_curve: list[Any] # Will use EquityRecord internally, but avoids circular import in models
+    closed_trades: list[ClosedTrade]
+    executions: list[Any] # Will use ExecutionRecord internally
+    risk_events: list[RiskDecision]
     metrics: dict[str, Any]

@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from app.domain.models import (
@@ -36,8 +36,8 @@ def spec():
 def policy():
     return RiskPolicy(
         id="pol-1", version="1.0", max_daily_loss_pct=0.05, max_drawdown_pct=0.10,
-        max_trade_risk_pct=0.01, max_open_risk_pct=0.05, max_gross_exposure=1000000.0,
-        max_net_exposure=50000.0, max_position_count=5, max_spread_pts=50,
+        max_trade_risk_pct=0.01, max_open_risk_pct=0.05, max_gross_exposure=5000000.0,
+        max_net_exposure=5000000.0, max_position_count=5, max_spread_pts=50,
         require_sl=False, session_constraints={}, leverage_limit=30.0
     )
 
@@ -111,8 +111,8 @@ def test_scenario_commission_exactly_once(spec):
     # Close
     sim.close_position(str(sim.positions[0].id))
     
-    assert sim.balance == pytest.approx(9977.0)
-    assert sim.equity == pytest.approx(9977.0) # Commission wasn't double counted
+    assert sim.balance == pytest.approx(9974.0)
+    assert sim.equity == pytest.approx(9974.0) # Commission wasn't double counted
 
 def test_scenario_partial_close_and_reversal(spec, policy):
     sim = SimulatorEngine(initial_balance=10000.0)
@@ -166,6 +166,7 @@ def test_scenario_risk_breaches(spec, policy):
     assert decision2.state == RiskDecisionState.FLATTEN
     
     # 3. Daily loss breach
+    policy.max_drawdown_pct = 0.50
     ctx.account.equity = 9000.0 # 10% daily loss
     decision3 = engine.evaluate(ctx, intent, policy, 1.0, 5.0)
     assert decision3.state == RiskDecisionState.FREEZE
@@ -185,3 +186,106 @@ def test_scenario_sl_tp_close(spec):
     open_pos = [p for p in sim.positions if p.state == PositionState.OPEN]
     assert len(open_pos) == 0
     assert sim.balance == pytest.approx(8980.0) # (1.0900 - 1.1002) * 100k = -1020
+
+def test_golden_accounting_regression(spec):
+    sim = SimulatorEngine(initial_balance=10000.0, commission_model=FixedPerLotCommissionModel(3.0))
+    sim.set_instrument(spec)
+    
+    t0 = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
+    sim.update_quote(Quote(timestamp=t0, symbol='EURUSD', bid=1.1000, ask=1.1002))
+    
+    intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)
+    decision = RiskDecision(state=RiskDecisionState.APPROVE, proposed_target=1.0, approved_target=1.0, proposed_volume=1.0, approved_volume=1.0, policy_id="x", policy_version="1", timestamp=t0)
+    sim.submit_order(ApprovedOrder(intent=intent, risk_decision=decision, timestamp=t0))
+    
+    # Assert Entry
+    assert sim.balance == 9997.0 # 3.0 entry commission deducted
+    assert sim.equity == pytest.approx(9977.0) # 9997 + (1.1000 - 1.1002)*100k
+    
+    t1 = datetime(2025, 1, 1, 11, 0, tzinfo=UTC)
+    sim.update_quote(Quote(timestamp=t1, symbol='EURUSD', bid=1.1010, ask=1.1012))
+    
+    assert sim.equity == pytest.approx(10077.0) # 9997 + (1.1010 - 1.1002)*100k = 9997 + 80
+    
+    ct, f = sim.close_position(str(sim.positions[0].id))
+    
+    # Exit metrics
+    assert f.price == 1.1010
+    assert f.commission == 3.0 # Exit comm
+    assert ct.entry_commission == 3.0
+    assert ct.exit_commission == 3.0
+    assert ct.gross_pnl == pytest.approx(80.0)
+    assert ct.net_pnl == pytest.approx(74.0)
+    
+    # Final Balance
+    assert sim.balance == pytest.approx(10074.0) # 10000 - 3(in) + 80(pnl) - 3(out)
+    assert sim.equity == pytest.approx(10074.0)
+
+def test_risk_inclusive_bounds(spec, policy):
+    engine = RiskEngine()
+    t = datetime.now(UTC)
+    q = Quote(timestamp=t, symbol="EURUSD", bid=1.1000, ask=1.1002)
+    acc = AccountSnapshot(timestamp=t, balance=10000, equity=10000, margin=0, margin_free=10000, margin_level=100, currency="USD", state=AccountState.NORMAL)
+    ctx = RiskContext(account=acc, open_positions=[], current_quote=q, instrument=spec, start_of_day_equity=10000.0, equity_peak=10000.0, current_time=t)
+    
+    # Limit exactly hit
+    ctx.account.equity = 9000.0 # Exactly 10% drawdown
+    policy.max_drawdown_pct = 0.10
+    intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)
+    decision = engine.evaluate(ctx, intent, policy, 1.0, 1.0)
+    assert decision.state == RiskDecisionState.FLATTEN
+    
+    ctx.account.equity = 9000.001 # Slightly less than 10%
+    decision = engine.evaluate(ctx, intent, policy, 1.0, 1.0)
+    assert decision.state != RiskDecisionState.FLATTEN
+
+def test_exposure_reduction_bypasses_limits(spec, policy):
+    engine = RiskEngine()
+    t = datetime.now(UTC)
+    q = Quote(timestamp=t, symbol="EURUSD", bid=1.1000, ask=1.1002)
+    acc = AccountSnapshot(timestamp=t, balance=10000, equity=10000, margin=0, margin_free=10000, margin_level=100, currency="USD", state=AccountState.NORMAL)
+    
+    # Create existing open position of 5 lots
+    from uuid import uuid4
+
+    from app.domain.models import Position
+    pos = Position(id=uuid4(), symbol="EURUSD", side=OrderSide.BUY, volume=5.0, open_price=1.1002, open_timestamp=t, state=PositionState.OPEN, commission=0)
+    
+    ctx = RiskContext(account=acc, open_positions=[pos], current_quote=q, instrument=spec, start_of_day_equity=10000.0, equity_peak=10000.0, current_time=t)
+    
+    # Intent: Sell 2 lots (reduce exposure)
+    intent = OrderIntent(symbol="EURUSD", side=OrderSide.SELL, type=OrderType.MARKET, volume=2.0)
+    
+    # Even if max net exposure is tiny, reducing exposure should be approved
+    policy.max_net_exposure = 1.0 
+    decision = engine.evaluate(ctx, intent, policy, -1.0, 2.0)
+    assert decision.state == RiskDecisionState.APPROVE
+
+def test_gym_reward_transition(spec, policy):
+    from app.core.decision_pipeline import DecisionPipeline
+    from app.envs.trading import TradingEnv
+    from app.simulator.engine import SimulatorEngine
+    
+    sim = SimulatorEngine(initial_balance=10000.0)
+    sim.set_instrument(spec)
+    pipeline = DecisionPipeline(RiskEngine())
+    
+    t = datetime(2025, 1, 1, 10, 0, tzinfo=UTC)
+    data = [
+        Quote(timestamp=t, symbol='EURUSD', bid=1.1000, ask=1.1002),
+        Quote(timestamp=t+timedelta(minutes=1), symbol='EURUSD', bid=1.1010, ask=1.1012),
+        Quote(timestamp=t+timedelta(minutes=2), symbol='EURUSD', bid=1.1020, ask=1.1022)
+    ]
+    
+    env = TradingEnv(simulator=sim, pipeline=pipeline, policy=policy, data=data)
+    env.reset()
+    
+    _obs, reward, _terminated, _truncated, info = env.step([1.0])
+    
+    # t=0 action is buy. Price moves from 1.1002 (ask) to 1.1010 (bid at t=1).
+    # Contract size 100k, Volume is based on max net exposure.
+    # We just want to check that reward > 0 and info equity > 10000
+    
+        
+    assert reward > 0
+    assert info['equity'] > 10000

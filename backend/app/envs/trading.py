@@ -73,24 +73,19 @@ class TradingEnv(gym.Env):
         
         prev_account = context.account
         
-        # t: pipeline execution and fill
-        approved_order = self.pipeline.process(target, context, self.policy)
-        if approved_order:
-            self.simulator.submit_order(approved_order)
-            
-        # Update peak equity after action
-        self.equity_peak = max(self.equity_peak, self.simulator.equity)
+        # t: pipeline decision and execution
+        from app.domain.models import RiskDecisionState
+        approved_order, decision = self.pipeline.process(target, context, self.policy)
         
-        current_account = self.simulator.get_account_snapshot()
-        reward = self.reward_model.calculate_reward(prev_account, current_account)
-        
-        info = {
-            "equity": self.simulator.equity,
-            "balance": self.simulator.balance,
-            "drawdown": (self.equity_peak - self.simulator.equity) / self.equity_peak if self.equity_peak > 0 else 0,
-        }
-        
-        # Advance to t+1
+        if decision:
+            if decision.state == RiskDecisionState.FREEZE:
+                self.simulator.freeze_account()
+            elif decision.state == RiskDecisionState.FLATTEN:
+                self.simulator.flatten_and_freeze()
+            elif approved_order and decision.state in [RiskDecisionState.APPROVE, RiskDecisionState.CLAMP]:
+                self.simulator.submit_order(approved_order)
+                
+        # Advance to t+1 and mark to market
         self.current_step += 1
         terminated = self.current_step >= len(self.data) - 1
         truncated = False
@@ -102,4 +97,16 @@ class TradingEnv(gym.Env):
         else:
             obs = np.zeros(2, dtype=np.float32)
             
+        self.equity_peak = max(self.equity_peak, self.simulator.equity)
+        current_account = self.simulator.get_account_snapshot()
+        
+        # Reward captures economic transition from t to t+1
+        reward = self.reward_model.calculate_reward(prev_account, current_account)
+        
+        info = {
+            "equity": self.simulator.equity,
+            "balance": self.simulator.balance,
+            "drawdown": (self.equity_peak - self.simulator.equity) / self.equity_peak if self.equity_peak > 0 else 0,
+        }
+        
         return obs, reward, terminated, truncated, info

@@ -38,8 +38,8 @@ def base_context():
 def base_policy():
     return RiskPolicy(
         id="pol-1", version="1.0", max_daily_loss_pct=0.05, max_drawdown_pct=0.10,
-        max_trade_risk_pct=0.01, max_open_risk_pct=0.05, max_gross_exposure=1000000.0,
-        max_net_exposure=500000.0, max_position_count=5, max_spread_pts=50,
+        max_trade_risk_pct=0.01, max_open_risk_pct=0.05, max_gross_exposure=5000000.0,
+        max_net_exposure=5000000.0, max_position_count=5, max_spread_pts=50,
         require_sl=False, session_constraints={}, leverage_limit=30.0
     )
 
@@ -82,6 +82,7 @@ def test_risk_drawdown_rejection(base_context, base_policy):
     assert any("Max drawdown exceeded" in v for v in decision.violations)
     
 def test_risk_daily_loss_rejection(base_context, base_policy):
+    base_policy.max_drawdown_pct = 0.50
     base_context.account.equity = 9000.0 # 10% daily loss (max is 5%)
     engine = RiskEngine()
     intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)

@@ -22,9 +22,9 @@ class EquityRecord(BaseModel):
     balance: float
     equity: float
     floating_pnl: float
-    realized_pnl: float
-    commission: float
-    swap: float
+    realized_pnl_delta: float
+    commission_delta: float
+    swap_delta: float
     margin: float
     margin_free: float
     drawdown: float

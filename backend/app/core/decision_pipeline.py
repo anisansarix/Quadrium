@@ -6,6 +6,7 @@ from app.domain.models import (
     OrderSide,
     OrderType,
     RiskContext,
+    RiskDecision,
     RiskDecisionState,
     RiskPolicy,
     TargetPosition,
@@ -41,7 +42,7 @@ class DecisionPipeline:
             
         return min(quantized_vol, context.instrument.volume_max)
 
-    def process(self, target: TargetPosition, context: RiskContext, policy: RiskPolicy) -> ApprovedOrder | None:
+    def process(self, target: TargetPosition, context: RiskContext, policy: RiskPolicy) -> tuple[ApprovedOrder | None, RiskDecision | None]:
         # 1. Convert weight to proposed volume
         proposed_abs_volume = self._convert_weight_to_volume(target.target_weight, context, policy)
         
@@ -55,7 +56,7 @@ class DecisionPipeline:
         delta_vol = target_net_vol - current_vol
         
         if abs(delta_vol) < context.instrument.volume_min:
-            return None # No operation needed
+            return None, None # No operation needed
             
         side = OrderSide.BUY if delta_vol > 0 else OrderSide.SELL
         intent_vol = abs(delta_vol)
@@ -84,6 +85,6 @@ class DecisionPipeline:
                     intent=intent,
                     risk_decision=decision,
                     timestamp=context.current_time
-                )
+                ), decision
                 
-        return None
+        return None, decision

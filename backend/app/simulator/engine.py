@@ -13,6 +13,7 @@ from app.domain.models import (
     Position,
     PositionState,
     Quote,
+    SimulationEvent,
 )
 from app.simulator.models.commission import CommissionModel, ZeroCommissionModel
 from app.simulator.models.currency import CurrencyConversionModel, DeterministicUSDModel
@@ -57,11 +58,43 @@ class SimulatorEngine:
     def set_instrument(self, spec: InstrumentSpec) -> None:
         self.instruments[spec.canonical_symbol] = spec
 
-    def update_quote(self, quote: Quote) -> None:
+    def update_quote(self, quote: Quote) -> SimulationEvent:
         self.quotes[quote.symbol] = quote
         self.current_time = quote.timestamp
         self._update_equity()
-        self._check_sl_tp()
+        
+        # Check SL/TP
+        fills = []
+        closed_trades = []
+        for p in self.positions:
+            if p.state == PositionState.OPEN:
+                q = self.quotes.get(p.symbol)
+                if not q:
+                    continue
+                
+                if p.sl is not None:
+                    trigger_price = self._get_trigger_price(q, self.fill_policy.long_sl_trigger if p.side == OrderSide.BUY else self.fill_policy.short_sl_trigger)
+                    if (p.side == OrderSide.BUY and trigger_price <= p.sl) or (p.side == OrderSide.SELL and trigger_price >= p.sl):
+                        ct, f = self.close_position(str(p.id), trigger_price, "SL")
+                        if ct and f:
+                            closed_trades.append(ct)
+                            fills.append(f)
+                        continue
+                
+                if p.tp is not None:
+                    trigger_price = self._get_trigger_price(q, self.fill_policy.long_tp_trigger if p.side == OrderSide.BUY else self.fill_policy.short_tp_trigger)
+                    if (p.side == OrderSide.BUY and trigger_price >= p.tp) or (p.side == OrderSide.SELL and trigger_price <= p.tp):
+                        ct, f = self.close_position(str(p.id), trigger_price, "TP")
+                        if ct and f:
+                            closed_trades.append(ct)
+                            fills.append(f)
+                            
+        return SimulationEvent(
+            timestamp=self.current_time or datetime.now(UTC),
+            fills=fills,
+            closed_trades=closed_trades,
+            risk_events=[]
+        )
 
     def _update_equity(self) -> None:
         unrealized_pnl = 0.0
@@ -84,26 +117,25 @@ class SimulatorEngine:
 
     def _get_trigger_price(self, quote: Quote, trigger: SLTriggerQuote) -> float:
         return quote.bid if trigger == SLTriggerQuote.BID else quote.ask
-
-    def _check_sl_tp(self) -> None:
+        
+    def freeze_account(self) -> None:
+        if self.account_state != AccountState.FLATTEN_AND_FREEZE:
+            self.account_state = AccountState.FREEZE
+            
+    def flatten_positions(self, reason: str = "FLATTEN") -> tuple[list[ClosedTrade], list[Fill]]:
+        closed_trades = []
+        fills = []
         for p in self.positions:
             if p.state == PositionState.OPEN:
-                q = self.quotes.get(p.symbol)
-                if not q:
-                    continue
-                
-                # Check SL
-                if p.sl is not None:
-                    trigger_price = self._get_trigger_price(q, self.fill_policy.long_sl_trigger if p.side == OrderSide.BUY else self.fill_policy.short_sl_trigger)
-                    if (p.side == OrderSide.BUY and trigger_price <= p.sl) or (p.side == OrderSide.SELL and trigger_price >= p.sl):
-                        self.close_position(str(p.id), trigger_price, "SL")
-                        continue
-                
-                # Check TP
-                if p.tp is not None:
-                    trigger_price = self._get_trigger_price(q, self.fill_policy.long_tp_trigger if p.side == OrderSide.BUY else self.fill_policy.short_tp_trigger)
-                    if (p.side == OrderSide.BUY and trigger_price >= p.tp) or (p.side == OrderSide.SELL and trigger_price <= p.tp):
-                        self.close_position(str(p.id), trigger_price, "TP")
+                ct, f = self.close_position(str(p.id), reason=reason)
+                if ct and f:
+                    closed_trades.append(ct)
+                    fills.append(f)
+        return closed_trades, fills
+        
+    def flatten_and_freeze(self, reason: str = "FLATTEN_AND_FREEZE") -> tuple[list[ClosedTrade], list[Fill]]:
+        self.account_state = AccountState.FLATTEN_AND_FREEZE
+        return self.flatten_positions(reason)
 
     def submit_order(self, order: ApprovedOrder) -> ExecutionResult:
         if self.account_state in [AccountState.FREEZE, AccountState.FLATTEN_AND_FREEZE]:
@@ -120,7 +152,6 @@ class SimulatorEngine:
         fills = []
         closed_trades = []
         
-        # Netting logic
         for p in self.positions:
             if p.state == PositionState.OPEN and p.symbol == order.intent.symbol and p.side != order.intent.side:
                 if p.volume <= remaining_vol:
@@ -138,8 +169,8 @@ class SimulatorEngine:
                     break
                     
         if remaining_vol > 0:
-            comm = self.commission_model.calculate_commission(order.intent.symbol, remaining_vol)
-            self.balance -= comm # Realized cost
+            entry_comm = self.commission_model.calculate_commission(order.intent.symbol, remaining_vol)
+            self.balance -= entry_comm # Realized entry cost
             
             fill = Fill(
                 order_id=str(uuid4()),
@@ -147,7 +178,7 @@ class SimulatorEngine:
                 volume=remaining_vol,
                 price=fill_price,
                 timestamp=self.current_time or datetime.now(UTC),
-                commission=comm,
+                commission=entry_comm,
                 swap=0.0,
                 realized_pnl=0.0
             )
@@ -162,7 +193,7 @@ class SimulatorEngine:
                 state=PositionState.OPEN,
                 sl=order.intent.sl,
                 tp=order.intent.tp,
-                commission=comm
+                commission=entry_comm
             )
             self.positions.append(pos)
             fills.append(fill)
@@ -178,23 +209,23 @@ class SimulatorEngine:
     def reduce_position(self, pos_id: str, amount: float, close_price: float, reason: str = "PARTIAL_CLOSE") -> tuple[ClosedTrade | None, Fill | None]:
         for p in self.positions:
             if str(p.id) == pos_id and p.state == PositionState.OPEN:
-                # Realize PnL
                 if p.side == OrderSide.BUY:
                     realized_pnl = (close_price - p.open_price) * amount * self.instruments[p.symbol].contract_size
                 else:
                     realized_pnl = (p.open_price - close_price) * amount * self.instruments[p.symbol].contract_size
                 
-                # Pro-rata commission/swap
                 prorata_ratio = amount / p.volume
-                realized_comm = p.commission * prorata_ratio
+                realized_entry_comm = p.commission * prorata_ratio
                 realized_swap = p.swap * prorata_ratio
                 
-                # Update position
+                # Charge exit commission
+                exit_comm = self.commission_model.calculate_commission(p.symbol, amount)
+                self.balance -= exit_comm
+                
                 p.volume -= amount
-                p.commission -= realized_comm
+                p.commission -= realized_entry_comm
                 p.swap -= realized_swap
                 
-                # Update balance (commission/swap were already deducted on open/accrual, so we just add PnL)
                 self.balance += realized_pnl
                 self._update_equity()
                 
@@ -212,9 +243,10 @@ class SimulatorEngine:
                     entry_volume=amount,
                     exit_volume=amount,
                     gross_pnl=realized_pnl,
-                    commission=realized_comm,
+                    entry_commission=realized_entry_comm,
+                    exit_commission=exit_comm,
                     swap=realized_swap,
-                    net_pnl=realized_pnl - realized_comm - realized_swap,
+                    net_pnl=realized_pnl - realized_entry_comm - exit_comm - realized_swap,
                     holding_seconds=holding_secs,
                     exit_reason=reason
                 )
@@ -224,7 +256,7 @@ class SimulatorEngine:
                     volume=amount,
                     price=close_price,
                     timestamp=close_time,
-                    commission=0.0, # already realized in the open phase
+                    commission=exit_comm,
                     swap=0.0,
                     realized_pnl=realized_pnl
                 )
@@ -248,6 +280,10 @@ class SimulatorEngine:
                     realized_pnl = (p.open_price - cp) * p.volume * self.instruments[p.symbol].contract_size
                 p.pnl = realized_pnl
                 
+                # Charge exit commission
+                exit_comm = self.commission_model.calculate_commission(p.symbol, p.volume)
+                self.balance -= exit_comm
+                
                 self.balance += realized_pnl
                 self._update_equity()
                 
@@ -264,9 +300,10 @@ class SimulatorEngine:
                     entry_volume=p.volume,
                     exit_volume=p.volume,
                     gross_pnl=realized_pnl,
-                    commission=p.commission,
+                    entry_commission=p.commission,
+                    exit_commission=exit_comm,
                     swap=p.swap,
-                    net_pnl=realized_pnl - p.commission - p.swap,
+                    net_pnl=realized_pnl - p.commission - exit_comm - p.swap,
                     holding_seconds=holding_secs,
                     exit_reason=reason
                 )
@@ -276,7 +313,7 @@ class SimulatorEngine:
                     volume=p.volume,
                     price=cp,
                     timestamp=p.close_timestamp,
-                    commission=0.0,
+                    commission=exit_comm,
                     swap=0.0,
                     realized_pnl=realized_pnl
                 )

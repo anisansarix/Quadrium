@@ -19,24 +19,23 @@ class RiskEngine:
         state = RiskDecisionState.APPROVE
         approved_volume = proposed_volume
         
-        # Account Level States
         if context.account.state in [AccountState.FREEZE, AccountState.FLATTEN_AND_FREEZE]:
             return self._reject(context, intent, policy, proposed_target, proposed_volume, ["Account is frozen"])
         
         # 1. Hard Drawdown Breach
         if context.equity_peak > 0:
             drawdown = (context.equity_peak - context.account.equity) / context.equity_peak
-            if drawdown > policy.max_drawdown_pct:
+            if drawdown >= policy.max_drawdown_pct:
                 return self._force_state(context, intent, policy, proposed_target, proposed_volume, RiskDecisionState.FLATTEN, ["Max drawdown exceeded (FLATTEN_AND_FREEZE)"])
                 
         # 2. Daily Loss Breach
         daily_loss = context.start_of_day_equity - context.account.equity
-        if daily_loss / context.start_of_day_equity > policy.max_daily_loss_pct:
+        if daily_loss / context.start_of_day_equity >= policy.max_daily_loss_pct:
             return self._force_state(context, intent, policy, proposed_target, proposed_volume, RiskDecisionState.FREEZE, ["Max daily loss exceeded (FREEZE)"])
             
         # 3. Spread Check
         spread_pts = (context.current_quote.ask - context.current_quote.bid) / context.instrument.point
-        if spread_pts > policy.max_spread_pts:
+        if spread_pts >= policy.max_spread_pts:
             violations.append(f"Spread {spread_pts} exceeds max {policy.max_spread_pts}")
             
         # 4. Mandatory SL
@@ -63,47 +62,59 @@ class RiskEngine:
             state = RiskDecisionState.CLAMP
             reasons.append("Volume clamped to max_volume")
             
-        # 7. Leverage Limit (Notional / Equity)
+        # 7. Leverage & Notional Exposure Limits
         price = context.current_quote.ask if intent.side == OrderSide.BUY else context.current_quote.bid
         
-        # Notional of entire proposed portfolio (assuming single instrument for now to match simplicity)
-        proposed_gross_vol = sum([p.volume for p in open_positions if p.symbol != intent.symbol]) + abs(proposed_net_vol)
-        proposed_notional = proposed_gross_vol * context.instrument.contract_size * price
+        current_other_gross = sum([p.volume for p in open_positions if p.symbol != intent.symbol])
+        proposed_gross_vol = current_other_gross + abs(proposed_net_vol)
+        proposed_gross_notional = proposed_gross_vol * context.instrument.contract_size * price
+        proposed_net_notional = abs(proposed_net_vol) * context.instrument.contract_size * price
         
-        if proposed_notional / context.account.equity > policy.leverage_limit:
-            # We must clamp. 
-            # Max available gross vol:
+        # Gross Exposure
+        if policy.max_gross_exposure > 0 and proposed_gross_notional >= policy.max_gross_exposure:
+            if not is_closing:
+                violations.append("Max gross exposure exceeded")
+            
+        # Net Exposure
+        if policy.max_net_exposure > 0 and proposed_net_notional >= policy.max_net_exposure:
+            if not is_closing:
+                violations.append("Max net exposure exceeded")
+            
+        # Leverage limit
+        if proposed_gross_notional / context.account.equity > policy.leverage_limit:
             max_gross_vol = (policy.leverage_limit * context.account.equity) / (context.instrument.contract_size * price)
-            current_other_gross = sum([p.volume for p in open_positions if p.symbol != intent.symbol])
             max_allowed_net_vol_for_symbol = max_gross_vol - current_other_gross
             
             if max_allowed_net_vol_for_symbol < 0:
                 violations.append("Leverage limit exceeded")
             else:
-                # We can only change intent_delta to reach max_allowed_net_vol_for_symbol
-                # if buying: proposed_net_vol = current_net_vol + intent_delta <= max_allowed_net_vol
-                # if selling: proposed_net_vol = current_net_vol + intent_delta >= -max_allowed_net_vol
                 if intent.side == OrderSide.BUY:
                     allowed_delta = max_allowed_net_vol_for_symbol - current_net_vol
                 else:
-                    allowed_delta = max_allowed_net_vol_for_symbol + current_net_vol # since current_net_vol is likely positive or we are shorting
+                    allowed_delta = max_allowed_net_vol_for_symbol + current_net_vol 
                     
                 allowed_vol = abs(allowed_delta)
                 step = context.instrument.volume_step
                 allowed_vol = math.floor(allowed_vol / step) * step
                 
                 if allowed_vol < context.instrument.volume_min:
-                    violations.append("Leverage limit exceeded")
+                    if not is_closing:
+                        violations.append("Leverage limit exceeded")
                 else:
-                    approved_volume = allowed_vol
-                    state = RiskDecisionState.CLAMP
-                    reasons.append("Volume clamped due to leverage limits")
-                    
-        # Explicit TODOs for unimplemented constraints
-        # TODO: policy.max_trade_risk_pct
-        # TODO: policy.max_open_risk_pct
-        # TODO: policy.max_gross_exposure
-        # TODO: policy.max_net_exposure
+                    if not is_closing: # Don't clamp a reduction
+                        approved_volume = allowed_vol
+                        state = RiskDecisionState.CLAMP
+                        reasons.append("Volume clamped due to leverage limits")
+                        
+        # 8. Trade & Open Risk Pct
+        if intent.sl is not None:
+            trade_risk_pts = abs(price - intent.sl) / context.instrument.point
+            trade_risk_cash = trade_risk_pts * context.instrument.tick_value * (approved_volume / context.instrument.tick_size)
+            if trade_risk_cash / context.account.equity >= policy.max_trade_risk_pct:
+                violations.append("Max trade risk exceeded")
+                
+        # Unimplemented explicit TODO
+        # TODO: policy.max_open_risk_pct (needs sum of open risk across portfolio)
         # TODO: policy.session_constraints
         
         if violations:

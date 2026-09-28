@@ -40,7 +40,7 @@ class MetricsCalculator:
         profit_factor = gross_profit / gross_loss if gross_loss > 0 else float('inf')
         
         turnover = sum([t.exit_volume for t in closed_trades])
-        total_commission = sum([t.commission for t in closed_trades])
+        total_commission = sum([t.entry_commission + t.exit_commission for t in closed_trades])
         total_swap = sum([t.swap for t in closed_trades])
         
         return {
