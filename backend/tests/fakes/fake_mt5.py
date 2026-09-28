@@ -27,6 +27,8 @@ class FakeAccountInfo:
     currency: str = "USD"
     leverage: int = 100
     trade_mode: int = 0
+    company: str = "Fake Broker Ltd"
+    server: str = "Fake-Server"
 
 class FakeMT5Client(MT5Client):
     def __init__(self, currency: str = "USD"):
@@ -63,13 +65,15 @@ class FakeMT5Client(MT5Client):
         if symbol not in self.symbols:
             self._last_error = (-1, "Symbol not found")
             return None
+        import datetime
+
         import numpy as np
         if not self.rates:
             self._last_error = (-1, "No data")
             return None
             
-        start_ts = int(date_from.timestamp())
-        end_ts = int(date_to.timestamp())
+        start_ts = int(date_from.replace(tzinfo=datetime.UTC).timestamp())
+        end_ts = int(date_to.replace(tzinfo=datetime.UTC).timestamp())
         filtered = [r for r in self.rates if start_ts <= r[0] <= end_ts]
         
         if not filtered:
@@ -82,13 +86,15 @@ class FakeMT5Client(MT5Client):
         if symbol not in self.symbols:
             self._last_error = (-1, "Symbol not found")
             return None
+        import datetime
+
         import numpy as np
         if not self.ticks:
             self._last_error = (-1, "No data")
             return None
             
-        start_ts = int(date_from.timestamp())
-        end_ts = int(date_to.timestamp())
+        start_ts = int(date_from.replace(tzinfo=datetime.UTC).timestamp())
+        end_ts = int(date_to.replace(tzinfo=datetime.UTC).timestamp())
         filtered = [t for t in self.ticks if start_ts <= t[0] <= end_ts]
         
         if not filtered:
@@ -108,3 +114,10 @@ class FakeMT5Client(MT5Client):
         
     def order_calc_margin(self, action: int, symbol: str, volume: float, price: float) -> float | None:
         return (price * 100000 * volume) / 100.0
+
+    def map_timeframe(self, timeframe: str) -> int:
+        mapping = {"M1": 1, "M5": 5, "M15": 15, "H1": 60, "D1": 1440}
+        return mapping.get(timeframe, 1)
+
+    def get_ticks_all_flag(self) -> int:
+        return -1

@@ -32,13 +32,13 @@ def analyze_gaps(df: pd.DataFrame, timeframe: str) -> GapReport:
     if timeframe not in freq_map:
         return GapReport(expected_bars=0, observed_bars=0, missing_bars=0, missing_intervals=[], weekend_bars=0, known_closures_bars=0)
         
+    from app.data.coverage import get_expected_bars
     freq = freq_map[timeframe]
     expected_range = pd.date_range(start=start, end=end, freq=freq, tz='UTC')
     
-    # Filter weekends
-    expected_weekdays = expected_range[expected_range.dayofweek < 5] # 0-4 are Mon-Fri
+    expected_weekdays = get_expected_bars(start, end, freq)
     
-    expected_bars = len(expected_weekdays)
+    expected_bars_count = len(expected_weekdays)
     observed_bars = len(df)
     
     df_ts = set(df['timestamp'])
@@ -65,10 +65,10 @@ def analyze_gaps(df: pd.DataFrame, timeframe: str) -> GapReport:
         missing_intervals.append(MissingInterval(start=current_start, end=current_prev, bars_missing=count))
         
     return GapReport(
-        expected_bars=expected_bars,
+        expected_bars=expected_bars_count,
         observed_bars=observed_bars,
         missing_bars=missing_bars,
         missing_intervals=missing_intervals,
-        weekend_bars=len(expected_range) - len(expected_weekdays),
+        weekend_bars=len(expected_range) - expected_bars_count, # Simplified
         known_closures_bars=0
     )

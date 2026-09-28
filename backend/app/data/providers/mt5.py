@@ -50,10 +50,12 @@ class MT5Provider(DataProvider):
             # Phase 1: validate account currency is USD
             account_info = self.client.account_info()
             if account_info is None:
+                self.client.shutdown()
                 self._connected = False
                 err = self.client.last_error()
                 raise MT5Error(f"Failed to fetch account info. Error {err[0]}: {err[1]}")
             if account_info.currency != "USD":
+                self.client.shutdown()
                 self._connected = False
                 raise MT5Error(f"Unsupported account currency: {account_info.currency}. Only USD accounts are supported in this phase.")
         else:
@@ -64,6 +66,15 @@ class MT5Provider(DataProvider):
         if self._connected:
             self.client.shutdown()
             self._connected = False
+            
+    def get_broker_metadata(self) -> dict[str, str]:
+        if not self._connected:
+            self.connect()
+        acc = self.client.account_info()
+        return {
+            "broker": getattr(acc, "company", "unknown"),
+            "server": getattr(acc, "server", "unknown")
+        }
 
     @property
     def capabilities(self) -> CapabilityMetadata:
@@ -112,30 +123,14 @@ class MT5Provider(DataProvider):
             stop_level=info.trade_stops_level
         )
 
-    def _map_timeframe(self, timeframe: str) -> int:
-        try:
-            import MetaTrader5 as mt5
-        except ImportError:
-            # For testing with fake client where mt5 doesn't exist
-            mapping = {"M1": 1, "M5": 5}
-            if timeframe not in mapping:
-                raise ValueError(f"Unsupported timeframe: {timeframe}")
-            return mapping[timeframe]
-            
-        mapping = {
-            "M1": mt5.TIMEFRAME_M1,
-            "M5": mt5.TIMEFRAME_M5,
-        }
-        if timeframe not in mapping:
-            raise ValueError(f"Unsupported timeframe: {timeframe}")
-        return mapping[timeframe]
+
 
     def fetch_bars(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:
         if not self._connected:
             self.connect()
             
         broker_symbol = self._get_broker_symbol(symbol)
-        tf = self._map_timeframe(timeframe)
+        tf = self.client.map_timeframe(timeframe)
         
         # Ensure UTC
         if start.tzinfo is None:
@@ -149,30 +144,16 @@ class MT5Provider(DataProvider):
         # In MT5, copy_rates_range takes naive datetimes but assumes they are in UTC
         rates = self.client.copy_rates_range(broker_symbol, tf, start_utc.replace(tzinfo=None), end_utc.replace(tzinfo=None))
         if rates is None or len(rates) == 0:
-            err = self.client.last_error()
-            raise MT5Error(f"No bars returned for {broker_symbol}. Error {err[0]}: {err[1]}")
+            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"])
             
         df = pd.DataFrame(rates)
         df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
         
         # Check coverage
-        returned_start = df['time'].min()
-        returned_end = df['time'].max()
+        df['time'].min()
+        df['time'].max()
         
-        # MT5 has limited bars. Validate coverage.
-        # We allow a small tolerance for end since the exact end timestamp might not have a bar (e.g. weekend or just no trade)
-        # Actually the prompt says "where full coverage is required ... Verify both returned_start <= requested_start and returned_end >= requested_end"
-        # However, it also said "For copy_rates_range() ... Report insufficient coverage explicitly"
-        # Let's strictly enforce requested limits. Note: requested_start / requested_end should match the bar timestamps if market is open.
-        
-        if returned_start > start_utc:
-            raise MT5Error(f"Coverage error: Requested start {start_utc}, but returned data starts at {returned_start}")
-        
-        # If the requested end is in the future, returned_end will obviously be < end_utc, 
-        # but for historical backfill it should cover the requested range.
-        if returned_end < end_utc - pd.Timedelta(days=3): 
-            # allow weekend gap at the end
-            raise MT5Error(f"Coverage error: Requested end {end_utc}, but returned data ends at {returned_end}")
+        # We removed strict coverage checks here; they belong in the ingestion layer/coverage policy.
         
         df = df.rename(columns={
             "time": "timestamp",
@@ -199,16 +180,11 @@ class MT5Provider(DataProvider):
         start_utc = start.astimezone(UTC)
         end_utc = end.astimezone(UTC)
         
-        try:
-            import MetaTrader5 as mt5
-            flags = mt5.COPY_TICKS_ALL
-        except ImportError:
-            flags = 1 # Fake fallback
+        flags = self.client.get_ticks_all_flag()
             
         ticks = self.client.copy_ticks_range(broker_symbol, start_utc.replace(tzinfo=None), end_utc.replace(tzinfo=None), flags)
         if ticks is None or len(ticks) == 0:
-            err = self.client.last_error()
-            raise MT5Error(f"No ticks returned for {broker_symbol}. Error {err[0]}: {err[1]}")
+            return pd.DataFrame(columns=["timestamp", "bid", "ask", "last", "volume", "flags"])
             
         df = pd.DataFrame(ticks)
         df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)

@@ -24,6 +24,10 @@ class DataProvider(ABC):
     @abstractmethod
     def get_instrument_spec(self, symbol: str) -> InstrumentSpec:
         pass
+        
+    @abstractmethod
+    def get_broker_metadata(self) -> dict[str, str]:
+        pass
 
     @abstractmethod
     def fetch_bars(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:

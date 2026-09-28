@@ -50,3 +50,6 @@ class YFinanceProvider(DataProvider):
     def fetch_bars(self, symbol: str, timeframe: str, start: datetime, end: datetime) -> pd.DataFrame:
         df = pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"])
         return df
+
+    def get_broker_metadata(self) -> dict[str, str]:
+        return {"broker": "yfinance", "server": "yahoo"}

@@ -19,14 +19,14 @@ class DatasetCatalog:
                 broker VARCHAR,
                 symbol VARCHAR,
                 timeframe VARCHAR,
-                start_time TIMESTAMP,
-                end_time TIMESTAMP,
+                start_time TIMESTAMPTZ,
+                end_time TIMESTAMPTZ,
                 row_count BIGINT,
-                dataset_hash VARCHAR,
+                dataset_hash VARCHAR UNIQUE,
                 schema_version VARCHAR,
                 source_metadata_hash VARCHAR,
                 path VARCHAR,
-                created_at TIMESTAMP
+                created_at TIMESTAMPTZ
             )
         """)
         
@@ -45,20 +45,21 @@ class DatasetCatalog:
                 dataset_id, source, broker, symbol, timeframe, start_time, end_time, 
                 row_count, dataset_hash, schema_version, source_metadata_hash, path, created_at
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (dataset_hash) DO NOTHING
         """, (
             manifest.dataset_id,
             manifest.source,
             manifest.broker,
             manifest.symbol,
             manifest.timeframe,
-            manifest.timestamp_start.replace(tzinfo=None),
-            manifest.timestamp_end.replace(tzinfo=None),
+            manifest.timestamp_start,
+            manifest.timestamp_end,
             manifest.row_count,
             manifest.dataset_hash,
             manifest.schema_version,
             manifest.source_metadata_hash,
             str(parquet_path),
-            manifest.fetch_timestamp.replace(tzinfo=None)
+            manifest.fetch_timestamp
         ))
 
     def query_datasets(self, symbol: str | None = None, timeframe: str | None = None) -> list[dict]:
@@ -72,6 +73,10 @@ class DatasetCatalog:
             params.append(timeframe)
             
         return self.conn.execute(query, params).df().to_dict(orient="records")
+
+    def get_dataset(self, dataset_id: str) -> dict | None:
+        res = self.conn.execute("SELECT * FROM datasets WHERE dataset_id = ?", (dataset_id,)).df().to_dict(orient="records")
+        return res[0] if res else None
 
     def lookup_by_hash(self, dataset_hash: str) -> list[dict]:
         return self.conn.execute("SELECT * FROM datasets WHERE dataset_hash = ?", (dataset_hash,)).df().to_dict(orient="records")

@@ -47,6 +47,14 @@ class MT5Client(ABC):
     @abstractmethod
     def order_calc_margin(self, action: int, symbol: str, volume: float, price: float) -> float | None:
         pass
+        
+    @abstractmethod
+    def map_timeframe(self, timeframe: str) -> int:
+        pass
+        
+    @abstractmethod
+    def get_ticks_all_flag(self) -> int:
+        pass
 
 class RealMT5Client(MT5Client):
     def __init__(self):
@@ -94,3 +102,18 @@ class RealMT5Client(MT5Client):
         
     def order_calc_margin(self, action: int, symbol: str, volume: float, price: float) -> float | None:
         return self.mt5.order_calc_margin(action, symbol, volume, price)
+        
+    def map_timeframe(self, timeframe: str) -> int:
+        mapping = {
+            "M1": self.mt5.TIMEFRAME_M1,
+            "M5": self.mt5.TIMEFRAME_M5,
+            "M15": self.mt5.TIMEFRAME_M15,
+            "H1": self.mt5.TIMEFRAME_H1,
+            "D1": self.mt5.TIMEFRAME_D1,
+        }
+        if timeframe not in mapping:
+            raise ValueError(f"Unsupported timeframe: {timeframe}")
+        return mapping[timeframe]
+        
+    def get_ticks_all_flag(self) -> int:
+        return self.mt5.COPY_TICKS_ALL

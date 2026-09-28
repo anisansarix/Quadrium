@@ -1,17 +1,28 @@
 import datetime
 
 import pandas as pd
+from pydantic import BaseModel
 
+from app.data.catalog import DatasetCatalog
 from app.data.datasets import DatasetManager
 from app.data.gaps import GapReport, analyze_gaps
-from app.data.providers.mt5 import MT5Provider
+from app.data.providers.base import DataProvider
 from app.data.validation import validate_dataframe
+from app.domain.models import DatasetManifest
 
+
+class DatasetArtifact(BaseModel):
+    dataset_id: str
+    dataset_hash: str
+    manifest: DatasetManifest
+    canonical_path: str
+    gap_report: GapReport
 
 class MT5Downloader:
-    def __init__(self, provider: MT5Provider, dataset_manager: DatasetManager):
+    def __init__(self, provider: DataProvider, dataset_manager: DatasetManager, catalog: DatasetCatalog):
         self.provider = provider
         self.dataset_manager = dataset_manager
+        self.catalog = catalog
         
     def download_bars(
         self, 
@@ -20,10 +31,10 @@ class MT5Downloader:
         start: datetime.datetime, 
         end: datetime.datetime, 
         chunk_days: int = 30
-    ) -> tuple[str, GapReport]:
+    ) -> DatasetArtifact:
         
         current_start = start
-        dfs = []
+        chunk_paths = []
         
         while current_start < end:
             current_end = min(current_start + datetime.timedelta(days=chunk_days), end)
@@ -31,43 +42,60 @@ class MT5Downloader:
             # Fetch
             df_chunk = self.provider.fetch_bars(symbol, timeframe, current_start, current_end)
             if not df_chunk.empty:
-                dfs.append(df_chunk)
-                
-                # Save raw
-                self.dataset_manager.save_raw(df_chunk, "mt5", symbol, timeframe)
+                # Validate chunk schema
+                validate_dataframe(df_chunk, expected_symbol=symbol, expected_timeframe=timeframe)
+                # Save raw chunk to disk and free memory
+                raw_path = self.dataset_manager.save_raw(df_chunk, "mt5", symbol, timeframe)
+                chunk_paths.append(raw_path)
                 
             current_start = current_end
             
-        if not dfs:
+        if not chunk_paths:
             raise ValueError("No data returned for entire range")
             
-        df_full = pd.concat(dfs, ignore_index=True)
+        # Assemble canonical from validated chunks on disk
+        df_full = pd.concat([pd.read_parquet(p) for p in chunk_paths], ignore_index=True)
         
         # Deduplicate and sort
         df_full = df_full.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
         
-        # Validate
-        validate_dataframe(df_full, expected_symbol=symbol, expected_timeframe=timeframe)
-        
-        # Source metadata
-        spec = self.provider.get_instrument_spec(symbol)
-        source_metadata = {
-            "broker_symbol": spec.broker_symbol,
-            "digits": spec.digits,
-            "tick_size": spec.tick_size
-        }
-        
         # Gap report
         gap_report = analyze_gaps(df_full, timeframe)
+        
+        # Evaluate coverage
+        from app.data.coverage import evaluate_coverage
+        coverage = evaluate_coverage(df_full, start, end, timeframe)
+        if coverage == "EMPTY":
+            raise ValueError(f"Coverage failed: dataset is EMPTY for requested range {start} to {end}")
+        elif coverage == "PARTIAL":
+            raise ValueError(f"Coverage failed: dataset is only PARTIAL for requested range {start} to {end}")
+            
+        # Source metadata
+        spec = self.provider.get_instrument_spec(symbol)
+        broker_meta = self.provider.get_broker_metadata()
+        
+        source_metadata = {
+            "broker_metadata": broker_meta,
+            "instrument_spec": spec.model_dump()
+        }
         
         # Rewrite canonical
         manifest = self.dataset_manager.save_canonical(
             df=df_full,
             source="mt5",
-            broker="unknown", # We can fetch broker name if we wanted
+            broker=broker_meta.get("broker", "unknown"),
             symbol=symbol,
             timeframe=timeframe,
             source_metadata=source_metadata
         )
         
-        return manifest.dataset_id, gap_report
+        canonical_path = self.dataset_manager.canonical_dir / f"{manifest.dataset_id}.parquet"
+        self.catalog.register_dataset(manifest, canonical_path)
+        
+        return DatasetArtifact(
+            dataset_id=manifest.dataset_id,
+            dataset_hash=manifest.dataset_hash,
+            manifest=manifest,
+            canonical_path=str(canonical_path),
+            gap_report=gap_report
+        )

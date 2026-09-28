@@ -69,3 +69,78 @@ def test_real_mt5_connection():
     spec = provider.get_instrument_spec("EURUSD")
     assert spec.canonical_symbol == "EURUSD"
     provider.disconnect()
+
+def test_mt5_provider_account_info_failure():
+    client = FakeMT5Client()
+    provider = MT5Provider(client=client)
+    
+    # Mock account_info to fail
+    client.account_info = lambda: None
+    
+    with pytest.raises(MT5Error, match="Failed to fetch account info"):
+        provider.connect()
+        
+    assert not provider._connected
+    assert not client.initialized
+
+def test_mt5_provider_account_currency_failure():
+    client = FakeMT5Client()
+    provider = MT5Provider(client=client)
+    
+    client.account_currency = "EUR"
+    
+    with pytest.raises(MT5Error, match="Unsupported account currency: EUR"):
+        provider.connect()
+        
+    assert not provider._connected
+    assert not client.initialized
+
+def test_end_to_end_ingestion():
+    from pathlib import Path
+
+    from app.data.catalog import DatasetCatalog
+    from app.data.datasets import DatasetManager
+    from app.data.downloader import MT5Downloader
+    
+    # Use in-memory duckdb or temp
+    temp_dir = Path("test_ingest_temp")
+    temp_dir.mkdir(exist_ok=True)
+    manager = DatasetManager(temp_dir)
+    catalog = DatasetCatalog(temp_dir / "catalog.duckdb")
+    
+    client = FakeMT5Client()
+    # fake bars over 2 days (Jan 1 is Sunday, Jan 2 is Monday)
+    client.rates = [
+        (1672531200, 1.1000, 1.1010, 1.0990, 1.1005, 100, 10, 100),
+        (1672617600, 1.1005, 1.1020, 1.1000, 1.1015, 150, 12, 150),
+        (1672703940, 1.1005, 1.1020, 1.1000, 1.1015, 150, 12, 150), # Jan 2 23:59
+        (1672704000, 1.1005, 1.1020, 1.1000, 1.1015, 150, 12, 150) # Jan 3 00:00
+    ]
+    provider = MT5Provider(client=client)
+    provider.connect()
+    
+    workflow = MT5Downloader(provider, manager, catalog)
+    start = datetime(2023, 1, 1, tzinfo=UTC)
+    end = datetime(2023, 1, 3, tzinfo=UTC)
+    
+    artifact = workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
+    
+    assert artifact.dataset_id
+    assert artifact.dataset_hash
+    
+    # Reload dataset by hash
+    res = catalog.lookup_by_hash(artifact.dataset_hash)
+    assert len(res) == 1
+    
+    # File existence
+    assert Path(artifact.canonical_path).exists()
+    
+    # Validate dataframe
+    df = manager.load_canonical(artifact.dataset_id)
+    assert len(df) == 4
+    assert df["symbol"].iloc[0] == "EURUSD"
+    assert df["timeframe"].iloc[0] == "M1"
+    assert df["timestamp"].dt.tz is not None # UTC
+    
+    import shutil
+    shutil.rmtree(temp_dir)
