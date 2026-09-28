@@ -11,5 +11,6 @@ class DataQualityReport(BaseModel):
     ticks_present_bar_missing: int
     unexpected_missing_bars: int
     known_closure_bars: int
+    unexpected_extra_bars: int
     duplicate_bars: int
     quality_status: Literal["PASS", "WARNING", "FAIL"]

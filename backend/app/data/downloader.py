@@ -88,7 +88,7 @@ class MT5Downloader:
         if coverage_status == "PARTIAL" and gap_report.unexpected_missing_bars == 0:
             coverage_status = "SPARSE"
             
-        if coverage_status == "EMPTY" or coverage_status == "PARTIAL" or gap_report.unexpected_missing_bars > 0 or duplicates_count > 0:
+        if coverage_status == "EMPTY" or coverage_status == "PARTIAL" or gap_report.unexpected_missing_bars > 0 or gap_report.unexpected_extra_bars > 0 or duplicates_count > 0:
             quality_status = "FAIL"
         else:
             quality_status = "PASS"
@@ -104,13 +104,16 @@ class MT5Downloader:
             ticks_present_bar_missing=gap_report.ticks_present_bar_missing,
             unexpected_missing_bars=gap_report.unexpected_missing_bars,
             known_closure_bars=gap_report.known_closure_bars,
+            unexpected_extra_bars=gap_report.unexpected_extra_bars,
             duplicate_bars=int(duplicates_count),
             quality_status=cast(Literal["PASS", "WARNING", "FAIL"], quality_status)
         )
         
-        if quality_status == "FAIL":
-            raise ValueError(f"Dataset ingestion failed quality checks: {quality_report.model_dump_json()}")
+
             
+        if quality_status == "FAIL":
+            raise ValueError(f"Dataset ingestion failed quality checks:\nQuality: {quality_report.model_dump_json()}\nGap: {gap_report.model_dump_json()}")
+
         spec = self.provider.get_instrument_spec(symbol)
         broker_meta = self.provider.get_broker_metadata()
         

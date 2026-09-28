@@ -688,3 +688,140 @@ def test_ingestion_dataset_identity_differs_by_range(tmp_path):
     datasets = catalog.query_datasets()
     assert len(datasets) == 2
 
+
+def test_source_bar_outside_session_fails(tmp_path):
+    from datetime import datetime, time, UTC
+    from unittest.mock import MagicMock
+    import pandas as pd
+    from app.data.datasets import DatasetManager
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.downloader import MT5Downloader
+    from app.data.providers.mt5 import MT5Provider
+
+    manager = DatasetManager(tmp_path)
+    catalog = DatasetCatalog(tmp_path / "catalog.duckdb")
+
+    config = ConfigurableCalendarConfig(
+        sessions=[SessionWindow(start_day=0, start_time=time(0, 0), end_day=0, end_time=time(12, 0))]
+    )
+    calendar = ConfigurableCalendar(config)
+
+    dates = pd.date_range(datetime(2023, 1, 2, 0, 0, tzinfo=UTC), datetime(2023, 1, 2, 13, 0, tzinfo=UTC), inclusive='left', freq='1min')
+
+    client = MagicMock()
+    client.initialize.return_value = True
+    client.terminal_info.return_value = MagicMock()
+    client.account_info.return_value = MagicMock(company="Fake", server="Fake", currency="USD", leverage=100)
+    sym = MagicMock()
+    sym.name = "EURUSD"
+    sym.digits = 5
+    sym.point = 1e-5
+    sym.trade_tick_size = 1e-5
+    sym.trade_tick_value = 1.0
+    sym.trade_contract_size = 100000.0
+    sym.volume_min = 0.01
+    sym.volume_max = 500.0
+    sym.volume_step = 0.01
+    sym.currency_margin = "EUR"
+    sym.currency_profit = "USD"
+    sym.trade_calc_mode = 0
+    client.symbol_info.return_value = sym
+    client.map_timeframe.return_value = 1
+
+    def mock_copy_rates_range(symbol, timeframe, start, end):
+        df = pd.DataFrame({'time': [int(d.timestamp()) for d in dates]})
+        df['open'] = 1.0
+        df['high'] = 1.0
+        df['low'] = 1.0
+        df['close'] = 1.0
+        df['tick_volume'] = 10
+        df['spread'] = 1
+        df['real_volume'] = 0
+        return df.to_records(index=False)
+
+    client.copy_rates_range.side_effect = mock_copy_rates_range
+    client.copy_ticks_range.return_value = None
+
+    provider = MT5Provider()
+    provider.client = client
+
+    downloader = MT5Downloader(provider, manager, catalog, calendar)
+
+    import pytest
+    with pytest.raises(ValueError, match="unexpected_extra_bars"):
+        downloader.download_bars("EURUSD", "M1", datetime(2023, 1, 2, 0, 0, tzinfo=UTC), datetime(2023, 1, 2, 23, 59, tzinfo=UTC))
+
+def test_multiple_weekly_windows(tmp_path):
+    from datetime import datetime, time, UTC
+    from unittest.mock import MagicMock
+    import pandas as pd
+    from app.data.datasets import DatasetManager
+    from app.data.catalog import DatasetCatalog
+    from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.downloader import MT5Downloader
+    from app.data.providers.mt5 import MT5Provider
+
+    manager = DatasetManager(tmp_path)
+    catalog = DatasetCatalog(tmp_path / "catalog.duckdb")
+
+    config = ConfigurableCalendarConfig(
+        sessions=[
+            SessionWindow(start_day=0, start_time=time(0, 0), end_day=0, end_time=time(10, 0)),
+            SessionWindow(start_day=0, start_time=time(14, 0), end_day=0, end_time=time(20, 0))
+        ]
+    )
+    calendar = ConfigurableCalendar(config)
+
+    dates1 = pd.date_range(datetime(2023, 1, 2, 0, 0, tzinfo=UTC), datetime(2023, 1, 2, 10, 0, tzinfo=UTC), inclusive='left', freq='1min')
+    dates2 = pd.date_range(datetime(2023, 1, 2, 14, 0, tzinfo=UTC), datetime(2023, 1, 2, 20, 0, tzinfo=UTC), inclusive='left', freq='1min')
+    dates = dates1.union(dates2)
+
+    client = MagicMock()
+    client.initialize.return_value = True
+    client.terminal_info.return_value = MagicMock()
+    client.account_info.return_value = MagicMock(company="Fake", server="Fake", currency="USD", leverage=100)
+    sym = MagicMock()
+    sym.name = "EURUSD"
+    sym.digits = 5
+    sym.point = 1e-5
+    sym.trade_tick_size = 1e-5
+    sym.trade_tick_value = 1.0
+    sym.trade_contract_size = 100000.0
+    sym.volume_min = 0.01
+    sym.volume_max = 500.0
+    sym.volume_step = 0.01
+    sym.currency_margin = "EUR"
+    sym.currency_profit = "USD"
+    sym.trade_calc_mode = 0
+    client.symbol_info.return_value = sym
+    client.map_timeframe.return_value = 1
+
+    def mock_copy_rates_range(symbol, timeframe, start, end):
+        # Only return what's in dates that falls into [start, end)
+        df = pd.DataFrame({'time': [int(d.timestamp()) for d in dates]})
+        mask = (df['time'] >= int(start.timestamp())) & (df['time'] < int(end.timestamp()))
+        dff = df[mask].copy()
+        if dff.empty: return None
+        dff['open'] = 1.0
+        dff['high'] = 1.0
+        dff['low'] = 1.0
+        dff['close'] = 1.0
+        dff['tick_volume'] = 10
+        dff['spread'] = 1
+        dff['real_volume'] = 0
+        return dff.to_records(index=False)
+
+    client.copy_rates_range.side_effect = mock_copy_rates_range
+    client.copy_ticks_range.return_value = None
+
+    provider = MT5Provider()
+    provider.client = client
+    downloader = MT5Downloader(provider, manager, catalog, calendar)
+
+    artifact = downloader.download_bars("EURUSD", "M1", datetime(2023, 1, 2, 0, 0, tzinfo=UTC), datetime(2023, 1, 2, 23, 59, tzinfo=UTC))
+
+    assert artifact.quality_report.quality_status == "PASS"
+    assert artifact.quality_report.unexpected_extra_bars == 0
+    assert artifact.quality_report.unexpected_missing_bars == 0
+    assert artifact.quality_report.coverage_status == "FULL"

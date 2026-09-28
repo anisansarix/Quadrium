@@ -152,7 +152,7 @@ def main():
         report += f"""- **Calc Mode**: {sym_info.trade_calc_mode}\n\n"""
 
         report += """## DATA\n"""
-        report += f"""- **Requested Interval**: {start_ts} to {end_ts}\n- **Dataset ID**: {artifact.dataset_id}\n- **Dataset Hash**: {artifact.dataset_hash}\n"""
+        report += f"""- **Requested Interval**: {start_ts} to {end_ts}\n"""
         
         if artifact:
             df_canonical = manager.load_canonical(artifact.dataset_id)
