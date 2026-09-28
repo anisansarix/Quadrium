@@ -91,7 +91,9 @@ def run_test(start_ts, end_ts, name, calendar):
             return False
             
     except Exception as e:
+        import traceback
         print(f"\nRESULT: FAIL - Exception during download: {e}")
+        traceback.print_exc()
         return False
 
 if __name__ == "__main__":
@@ -107,7 +109,7 @@ if __name__ == "__main__":
     # Let's run it with the current calendar (Sunday 22:00 to Friday 22:00) which was already configured.
     
     cal_config = ConfigurableCalendarConfig(
-        sessions=[SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))]
+        sessions=[SessionWindow(start_day=6, start_time=time(21, 0), end_day=4, end_time=time(21, 0))]
     )
     calendar = ConfigurableCalendar(cal_config)
     

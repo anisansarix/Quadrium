@@ -49,8 +49,6 @@ class MT5Downloader:
             # Fetch
             df_chunk = self.provider.fetch_bars(symbol, timeframe, current_start, current_end)
             if not df_chunk.empty:
-                # Validate chunk schema
-                validate_dataframe(df_chunk, expected_symbol=symbol, expected_timeframe=timeframe)
                 # Save raw chunk to disk and free memory
                 raw_path = self.dataset_manager.save_raw(df_chunk, "mt5", symbol, timeframe)
                 chunk_paths.append((raw_path, current_start, current_end))
@@ -63,10 +61,21 @@ class MT5Downloader:
         df_list = []
         for p, c_start, c_end in chunk_paths:
             df_p = pd.read_parquet(p)
+            
+            # Canonicalize raw time -> timestamp
+            if hasattr(self.provider, '_time_profile') and self.provider._time_profile:
+                tp = self.provider._time_profile
+                df_p = tp.add_canonical_column(df_p, raw_col='time', new_col='timestamp')
+            else:
+                # Fallback if no profile is used, assume raw time is UTC epoch (incorrect but safe fallback)
+                df_p['timestamp'] = pd.to_datetime(df_p['time'], unit='s', utc=True)
+                
+            # Now we can filter strictly by canonical UTC!
             df_p = df_p[(df_p['timestamp'] >= c_start) & (df_p['timestamp'] < c_end)]
             df_list.append(df_p)
             
         df_full = pd.concat(df_list, ignore_index=True)
+        validate_dataframe(df_full, expected_symbol=symbol, expected_timeframe=timeframe)
         
         initial_len = len(df_full)
         df_full = df_full.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")

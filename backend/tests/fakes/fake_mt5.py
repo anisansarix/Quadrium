@@ -61,7 +61,7 @@ class FakeMT5Client(MT5Client):
             return False
         return True
         
-    def copy_rates_range(self, symbol: str, timeframe: int, date_from: datetime.datetime, date_to: datetime.datetime) -> Any:
+    def copy_rates_range(self, symbol: str, timeframe: int, date_from: datetime.datetime | int, date_to: datetime.datetime | int) -> Any:
         if symbol not in self.symbols:
             self._last_error = (-1, "Symbol not found")
             return None
@@ -72,8 +72,8 @@ class FakeMT5Client(MT5Client):
             self._last_error = (-1, "No data")
             return None
             
-        start_ts = int(date_from.timestamp() if date_from.tzinfo else date_from.replace(tzinfo=datetime.UTC).timestamp())
-        end_ts = int(date_to.timestamp() if date_to.tzinfo else date_to.replace(tzinfo=datetime.UTC).timestamp())
+        start_ts = date_from if isinstance(date_from, int) else int(date_from.timestamp() if date_from.tzinfo else date_from.replace(tzinfo=datetime.UTC).timestamp())
+        end_ts = date_to if isinstance(date_to, int) else int(date_to.timestamp() if date_to.tzinfo else date_to.replace(tzinfo=datetime.UTC).timestamp())
         filtered = [r for r in self.rates if start_ts <= r[0] <= end_ts]
         
         if not filtered:
@@ -82,7 +82,7 @@ class FakeMT5Client(MT5Client):
         dt = np.dtype([('time', '<i8'), ('open', '<f8'), ('high', '<f8'), ('low', '<f8'), ('close', '<f8'), ('tick_volume', '<u8'), ('spread', '<i4'), ('real_volume', '<u8')])
         return np.array(filtered, dtype=dt)
         
-    def copy_ticks_range(self, symbol: str, date_from: datetime.datetime, date_to: datetime.datetime, flags: int) -> Any:
+    def copy_ticks_range(self, symbol: str, date_from: datetime.datetime | int, date_to: datetime.datetime | int, flags: int) -> Any:
         if symbol not in self.symbols:
             self._last_error = (-1, "Symbol not found")
             return None
@@ -93,14 +93,21 @@ class FakeMT5Client(MT5Client):
             self._last_error = (-1, "No data")
             return None
             
-        start_ts = int(date_from.timestamp() if date_from.tzinfo else date_from.replace(tzinfo=datetime.UTC).timestamp())
-        end_ts = int(date_to.timestamp() if date_to.tzinfo else date_to.replace(tzinfo=datetime.UTC).timestamp())
-        filtered = [t for t in self.ticks if start_ts <= t[0] <= end_ts]
+        start_ts = date_from if isinstance(date_from, int) else int(date_from.timestamp() if date_from.tzinfo else date_from.replace(tzinfo=datetime.UTC).timestamp())
+        end_ts = date_to if isinstance(date_to, int) else int(date_to.timestamp() if date_to.tzinfo else date_to.replace(tzinfo=datetime.UTC).timestamp())
+        filtered = []
+        for t in self.ticks:
+            if start_ts <= t[0] <= end_ts:
+                # If test provided a 6-tuple: (time, bid, ask, last, volume, flags)
+                if len(t) == 6:
+                    filtered.append((t[0], t[1], t[2], t[3], t[4], t[0]*1000, t[5], t[4]))
+                else:
+                    filtered.append(t)
         
         if not filtered:
             return None
             
-        dt = np.dtype([('time', '<i8'), ('bid', '<f8'), ('ask', '<f8'), ('last', '<f8'), ('volume', '<u8'), ('flags', '<u4')])
+        dt = np.dtype([('time', '<i8'), ('bid', '<f8'), ('ask', '<f8'), ('last', '<f8'), ('volume', '<u8'), ('time_msc', '<i8'), ('flags', '<u4'), ('volume_real', '<f8')])
         return np.array(filtered, dtype=dt)
         
     def account_info(self) -> Any:

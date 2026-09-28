@@ -23,7 +23,7 @@ def main():
     end_ts = datetime(2026, 9, 25, 0, 0, tzinfo=UTC)
     
     calendar_config = ConfigurableCalendarConfig(
-        sessions=[SessionWindow(start_day=6, start_time=time(22, 0), end_day=4, end_time=time(22, 0))]
+        sessions=[SessionWindow(start_day=6, start_time=time(21, 0), end_day=4, end_time=time(21, 0))]
     )
     calendar = ConfigurableCalendar(calendar_config)
     

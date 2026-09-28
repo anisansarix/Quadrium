@@ -24,6 +24,14 @@ def diagnose_missing_bars(
     for m_ts in missing_timestamps:
         end_m = m_ts + timedelta(minutes=1)
         ticks = provider.fetch_ticks(symbol, m_ts, end_m)
+        if hasattr(provider, '_time_profile') and getattr(provider, '_time_profile', None):
+            tp = provider._time_profile
+            # For ticks, raw time is 'time_msc' in milliseconds, but wait, the raw df from fetch_ticks has 'time_msc' and 'time'
+            ticks = tp.add_canonical_column(ticks, raw_col='time', new_col='timestamp')
+        elif 'timestamp' not in ticks.columns and 'time' in ticks.columns:
+            import pandas as pd
+            ticks['timestamp'] = pd.to_datetime(ticks['time'], unit='s', utc=True)
+            
         ticks = ticks[(ticks['timestamp'] >= m_ts) & (ticks['timestamp'] < end_m)]
         tc = len(ticks)
         

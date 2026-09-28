@@ -4,7 +4,7 @@ import pandas as pd
 
 from app.data.providers.base import CapabilityMetadata, DataProvider
 from app.data.providers.mt5_client import MT5Client, RealMT5Client
-from app.data.time_profile import mt5_label_to_utc, utc_to_mt5_label
+from app.data.time_profile import utc_to_mt5_label
 from app.domain.models import InstrumentSpec
 
 
@@ -147,48 +147,35 @@ class MT5Provider(DataProvider):
         if self._time_profile:
             ranges = self._time_profile.get_subranges(start_utc, end_utc)
             for r_start, r_end, offset in ranges:
-                # Use int epochs to avoid local tz mangling
                 req_start = utc_to_mt5_label(r_start, offset)
                 req_end = utc_to_mt5_label(r_end, offset)
                 
                 rates = self.client.copy_rates_range(broker_symbol, tf, req_start, req_end)
                 if rates is not None and len(rates) > 0:
-                    df = pd.DataFrame(rates)
-                    # Convert raw 'time' back to UTC using the profile offset
-                    # We create datetime objects, then convert to pd.Timestamp to ensure standard Pandas UTC format
-                    df['time'] = df['time'].apply(lambda x, o=offset: pd.Timestamp(mt5_label_to_utc(x, o)))
-                    dfs.append(df)
+                    dfs.append(pd.DataFrame(rates))
         else:
-            rates = self.client.copy_rates_range(broker_symbol, tf, start_utc, end_utc)
+            rates = self.client.copy_rates_range(broker_symbol, tf, start_utc, end_utc) # type: ignore
             if rates is not None and len(rates) > 0:
-                df = pd.DataFrame(rates)
-                df['time'] = pd.to_datetime(df['time'], unit='s', utc=True)
-                dfs.append(df)
+                dfs.append(pd.DataFrame(rates))
                 
         if not dfs:
-            return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"])
+            df = pd.DataFrame(columns=["time", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"])
+            df["symbol"] = symbol
+            df["timeframe"] = timeframe
+            return df
             
         df = pd.concat(dfs, ignore_index=True)
-        # Filter duplicates just in case ranges overlapped at boundaries
-        df = df.drop_duplicates(subset=['time'])
-        # Ensure we stay strictly within requested canonical [start, end)
-        df = df[(df['time'] >= start_utc) & (df['time'] < end_utc)]
         
-        df = df.rename(columns={
-            "time": "timestamp",
-            "tick_volume": "tick_volume",
-            "real_volume": "real_volume"
-        })
-        
-        expected_cols = ["timestamp", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
+        df["symbol"] = symbol
+        df["timeframe"] = timeframe
+        expected_cols = ["time", "symbol", "timeframe", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
         for col in expected_cols:
             if col not in df.columns:
                 df[col] = 0
                 
-        df["symbol"] = symbol
-        df["timeframe"] = timeframe
-        df = df[["timestamp", "symbol", "timeframe", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]]
-        return df[["timestamp", "symbol", "timeframe", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]]
+        # We DO NOT filter by start_utc and end_utc here because 'time' is raw server epoch!
+        # The downloader will filter it after canonicalization.
+        return df[expected_cols]
 
     def fetch_ticks(self, symbol: str, start: datetime, end: datetime) -> pd.DataFrame:
         if not self._connected:
@@ -214,31 +201,23 @@ class MT5Provider(DataProvider):
                 
                 ticks = self.client.copy_ticks_range(broker_symbol, req_start, req_end, mt5.COPY_TICKS_ALL)
                 if ticks is not None and len(ticks) > 0:
-                    df = pd.DataFrame(ticks)
-                    # Convert raw 'time' (sec) and we must also construct full msc if needed.
-                    # But MT5 ticks have 'time' in sec and 'time_msc' in msc.
-                    # Actually wait, time_msc is the exact one we should use!
-                    # For Phase 1, we just convert 'time_msc' back by subtracting offset*3600*1000
-                    # And then use pd.to_datetime with unit='ms'
-                    # Or we can just use mt5_label_to_utc on 'time' and add the ms.
-                    df['time'] = df['time_msc'].apply(lambda x, o=offset: pd.Timestamp(mt5_label_to_utc(x / 1000.0, o)))
-                    dfs.append(df)
+                    dfs.append(pd.DataFrame(ticks))
         else:
             import MetaTrader5 as mt5
-            ticks = self.client.copy_ticks_range(broker_symbol, start_utc, end_utc, mt5.COPY_TICKS_ALL)
+            ticks = self.client.copy_ticks_range(broker_symbol, start_utc, end_utc, mt5.COPY_TICKS_ALL) # type: ignore
             if ticks is not None and len(ticks) > 0:
-                df = pd.DataFrame(ticks)
-                df['time'] = pd.to_datetime(df['time_msc'], unit='ms', utc=True)
-                dfs.append(df)
+                dfs.append(pd.DataFrame(ticks))
                 
         if not dfs:
-            return pd.DataFrame(columns=["timestamp", "bid", "ask", "last", "volume", "flags"])
+            df = pd.DataFrame(columns=["time", "time_msc", "bid", "ask", "last", "volume", "flags"])
+            df["symbol"] = symbol
+            return df
             
         df = pd.concat(dfs, ignore_index=True)
-        df = df.drop_duplicates(subset=['time'])
-        df = df[(df['time'] >= start_utc) & (df['time'] < end_utc)]
+        
         
         df["symbol"] = symbol
         df["spread"] = df["ask"] - df["bid"]
-        df = df.rename(columns={"time": "timestamp"})
-        return df[["timestamp", "symbol", "bid", "ask", "last", "volume", "flags"]][["timestamp", "symbol", "bid", "ask", "last", "volume", "flags"]]
+        
+        expected_cols = ["time", "time_msc", "symbol", "bid", "ask", "last", "volume", "flags", "spread"]
+        return df[expected_cols]

@@ -37,11 +37,9 @@ class TimeProfile(BaseModel):
             p_start = p.effective_from if p.effective_from is not None else -float('inf')
             p_end = p.effective_to if p.effective_to is not None else float('inf')
 
-            # If the period is entirely before our current start, skip
             if p_end <= current_start:
                 continue
                 
-            # If the period covers our current start
             if p_start <= current_start < p_end:
                 range_end = min(end_epoch, p_end)
                 ranges.append((
@@ -56,27 +54,42 @@ class TimeProfile(BaseModel):
 
         return ranges
 
+    def convert_raw_to_utc(self, raw_timestamp: int) -> datetime:
+        for p in self.periods:
+            p_start = p.effective_from if p.effective_from is not None else -float('inf')
+            p_end = p.effective_to if p.effective_to is not None else float('inf')
+            
+            utc_epoch = float(raw_timestamp) - (p.offset_hours * 3600.0)
+            if p_start <= utc_epoch < p_end:
+                return datetime.fromtimestamp(utc_epoch, tz=UTC)
+                
+        raise ValueError(f"No valid time profile period found for raw timestamp {raw_timestamp}")
+        
+    def add_canonical_column(self, df, raw_col='time', new_col='timestamp'):
+        import pandas as pd
+        if df.empty:
+            df[new_col] = pd.Series(dtype='datetime64[ns, UTC]')
+            return df
+        
+        def _convert(x):
+            return pd.Timestamp(self.convert_raw_to_utc(x))
+                
+        df[new_col] = df[raw_col].apply(_convert)
+        return df
+
 
 def utc_to_mt5_label(dt_utc: datetime, offset_hours: float) -> int:
-    """
-    Convert a canonical UTC datetime into an MT5 raw integer epoch (Server Time).
-    We do this by adding the offset to the UTC epoch.
-    """
     epoch = dt_utc.timestamp()
     shifted_epoch = epoch + (offset_hours * 3600.0)
     return int(shifted_epoch)
 
 
 def mt5_label_to_utc(raw_timestamp: int, offset_hours: float) -> datetime:
-    """
-    Convert a raw MT5 Server Time epoch back into a canonical UTC datetime.
-    We do this by subtracting the offset from the Server Time epoch.
-    """
     true_epoch = float(raw_timestamp) - (offset_hours * 3600.0)
     return datetime.fromtimestamp(true_epoch, tz=UTC)
 
+
 def get_metaquotes_demo_phase1_profile() -> TimeProfile:
-    # A hardcoded UTC+3 profile for Phase 1
     return TimeProfile(
         profile_id="metaquotes_demo_eurusd_phase1_v1",
         broker="MetaQuotes Ltd.",
