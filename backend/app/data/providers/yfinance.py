@@ -1,8 +1,10 @@
-from typing import List, Dict, Any, Optional
-from datetime import datetime, timezone
+from datetime import datetime
+
 import pandas as pd
-from app.data.providers.base import DataProvider, CapabilityMetadata
+
+from app.data.providers.base import CapabilityMetadata, DataProvider
 from app.domain.models import InstrumentSpec
+
 
 class YFinanceCapabilities(CapabilityMetadata):
     bid_ask = False
@@ -14,15 +16,18 @@ class YFinanceCapabilities(CapabilityMetadata):
     suitable_for_execution_backtest = False
 
 class YFinanceProvider(DataProvider):
-    def __init__(self):
+    def __init__(self, synthetic_specs: bool = False):
         self._capabilities = YFinanceCapabilities()
+        self.synthetic_specs = synthetic_specs
 
     @property
     def capabilities(self) -> CapabilityMetadata:
         return self._capabilities
 
     def get_instrument_spec(self, symbol: str) -> InstrumentSpec:
-        # Dummy spec
+        if not self.synthetic_specs:
+            raise ValueError("YFinance does not provide true broker execution metadata. Enable synthetic_specs to mock it.")
+            
         return InstrumentSpec(
             broker_symbol=symbol,
             canonical_symbol=symbol,

@@ -1,8 +1,10 @@
-from enum import Enum
-from pydantic import BaseModel, ConfigDict
-from typing import Optional, List, Dict, Any
 from datetime import datetime
-from uuid import UUID, uuid4
+from enum import Enum
+from typing import Any
+from uuid import UUID
+
+from pydantic import BaseModel, Field, model_validator
+
 
 class OrderSide(str, Enum):
     BUY = "BUY"
@@ -35,44 +37,50 @@ class InstrumentSpec(BaseModel):
     broker_symbol: str
     canonical_symbol: str
     asset_class: str
-    digits: int
-    point: float
-    tick_size: float
-    tick_value: float
-    contract_size: float
-    volume_min: float
-    volume_max: float
-    volume_step: float
+    digits: int = Field(ge=0)
+    point: float = Field(gt=0)
+    tick_size: float = Field(gt=0)
+    tick_value: float = Field(gt=0)
+    contract_size: float = Field(gt=0)
+    volume_min: float = Field(gt=0)
+    volume_max: float = Field(gt=0)
+    volume_step: float = Field(gt=0)
     margin_currency: str
     profit_currency: str
     execution_mode: str
-    trading_sessions: Dict[str, List[str]]
-    stop_level: int
+    trading_sessions: dict[str, list[str]]
+    stop_level: int = Field(ge=0)
+
+    @model_validator(mode='after')
+    def validate_volume(self) -> 'InstrumentSpec':
+        if self.volume_min > self.volume_max:
+            raise ValueError("volume_min must be <= volume_max")
+        return self
 
 class MarketBar(BaseModel):
     timestamp: datetime
     symbol: str
-    open: float
-    high: float
-    low: float
-    close: float
-    tick_volume: int
-    spread: int
-    real_volume: int
+    open: float = Field(gt=0)
+    high: float = Field(gt=0)
+    low: float = Field(gt=0)
+    close: float = Field(gt=0)
+    tick_volume: int = Field(ge=0)
+    spread: int = Field(ge=0)
+    real_volume: int = Field(ge=0)
 
 class MarketTick(BaseModel):
     timestamp: datetime
     symbol: str
-    bid: float
-    ask: float
-    last: float
-    volume: int
+    bid: float = Field(gt=0)
+    ask: float = Field(gt=0)
+    last: float = Field(gt=0)
+    volume: int = Field(ge=0)
 
 class Quote(BaseModel):
     timestamp: datetime
     symbol: str
-    bid: float
-    ask: float
+    bid: float = Field(gt=0)
+    ask: float = Field(gt=0)
 
 class AccountSnapshot(BaseModel):
     timestamp: datetime
@@ -87,29 +95,31 @@ class Position(BaseModel):
     id: UUID
     symbol: str
     side: OrderSide
-    volume: float
-    open_price: float
+    volume: float = Field(gt=0)
+    open_price: float = Field(gt=0)
     open_timestamp: datetime
-    sl: Optional[float] = None
-    tp: Optional[float] = None
+    sl: float | None = None
+    tp: float | None = None
     state: PositionState
-    close_price: Optional[float] = None
-    close_timestamp: Optional[datetime] = None
-    pnl: Optional[float] = None
+    close_price: float | None = None
+    close_timestamp: datetime | None = None
+    pnl: float | None = None
+    commission: float = 0.0
+    swap: float = 0.0
+
+class TargetPosition(BaseModel):
+    symbol: str
+    target_weight: float = Field(ge=-1.0, le=1.0) # -1.0 short max, 1.0 long max, 0 flat
 
 class OrderIntent(BaseModel):
     symbol: str
     side: OrderSide
     type: OrderType
-    volume: float
-    sl: Optional[float] = None
-    tp: Optional[float] = None
+    volume: float = Field(gt=0)
+    sl: float | None = None
+    tp: float | None = None
     magic: int = 0
     comment: str = ""
-
-class TargetPosition(BaseModel):
-    symbol: str
-    target_volume: float  # Positive for long, negative for short, 0 for flat
 
 class RiskPolicy(BaseModel):
     id: str
@@ -123,19 +133,29 @@ class RiskPolicy(BaseModel):
     max_position_count: int
     max_spread_pts: int
     require_sl: bool
-    session_constraints: Dict[str, Any]
+    session_constraints: dict[str, Any]
     leverage_limit: float
 
 class RiskContext(BaseModel):
     account: AccountSnapshot
-    open_positions: List[Position]
+    open_positions: list[Position]
     current_quote: Quote
     instrument: InstrumentSpec
+    start_of_day_equity: float
+    equity_peak: float
+    current_time: datetime
 
 class RiskDecision(BaseModel):
     state: RiskDecisionState
-    reason: str = ""
-    clamped_volume: Optional[float] = None
+    reasons: list[str] = []
+    violations: list[str] = []
+    proposed_target: float
+    approved_target: float
+    proposed_volume: float
+    approved_volume: float
+    policy_id: str
+    policy_version: str
+    timestamp: datetime
 
 class ApprovedOrder(BaseModel):
     intent: OrderIntent
@@ -153,9 +173,9 @@ class Fill(BaseModel):
 
 class ExecutionResult(BaseModel):
     success: bool
-    order_id: Optional[str] = None
-    error_message: Optional[str] = None
-    fill: Optional[Fill] = None
+    order_id: str | None = None
+    error_message: str | None = None
+    fill: Fill | None = None
 
 class DatasetManifest(BaseModel):
     source: str
@@ -167,11 +187,10 @@ class DatasetManifest(BaseModel):
     row_count: int
     schema_version: str
     file_hash: str
-    source_metadata: Dict[str, Any]
+    source_metadata: dict[str, Any]
     fetch_timestamp: datetime
 
-class ExperimentManifest(BaseModel):
-    experiment_id: str
+class ExperimentSpec(BaseModel):
     git_sha: str
     dataset_hash: str
     feature_version: str
@@ -180,12 +199,16 @@ class ExperimentManifest(BaseModel):
     risk_policy_version: str
     environment_version: str
     seed: int
-    hyperparameters: Dict[str, Any]
-    train_window: Dict[str, datetime]
-    validation_window: Dict[str, datetime]
-    test_window: Dict[str, datetime]
-    holdout_window: Dict[str, datetime]
+    train_window: dict[str, datetime]
+    validation_window: dict[str, datetime]
+    test_window: dict[str, datetime]
+    holdout_window: dict[str, datetime]
     execution_cost_profile: str
-    mlflow_run_id: str
-    metrics: Dict[str, Any]
-    artifacts: List[str]
+
+class ExperimentResult(BaseModel):
+    experiment_id: str
+    spec: ExperimentSpec
+    hyperparameters: dict[str, Any]
+    mlflow_run_id: str | None = None
+    metrics: dict[str, Any] | None = None
+    artifacts: list[str] = []

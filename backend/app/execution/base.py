@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
-from typing import List, Optional
-from app.domain.models import ApprovedOrder, ExecutionResult, Position, AccountSnapshot, Quote
+
+from app.domain.models import AccountSnapshot, ApprovedOrder, ExecutionResult, Position
+
 
 class ExecutionAdapter(ABC):
     @abstractmethod
@@ -8,7 +9,7 @@ class ExecutionAdapter(ABC):
         pass
 
     @abstractmethod
-    def get_positions(self) -> List[Position]:
+    def get_positions(self) -> list[Position]:
         pass
 
     @abstractmethod

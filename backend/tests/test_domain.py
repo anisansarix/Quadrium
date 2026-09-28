@@ -1,5 +1,5 @@
-import pytest
 from app.domain.models import InstrumentSpec
+
 
 def test_instrument_spec_creation():
     spec = InstrumentSpec(

@@ -1,12 +1,20 @@
-import pandas as pd
-from datetime import timezone
+from datetime import UTC
 
-def validate_dataframe(df: pd.DataFrame):
+import pandas as pd
+
+from app.data.providers.base import DataProvider
+
+
+def require_execution_capability(provider: DataProvider) -> None:
+    if not provider.capabilities.suitable_for_execution_backtest:
+        raise ValueError(f"Provider {provider.__class__.__name__} is not suitable for execution backtests")
+
+def validate_dataframe(df: pd.DataFrame) -> None:
     if df.empty:
         return
     
     # Check UTC
-    if df['timestamp'].dt.tz is None or df['timestamp'].dt.tz != timezone.utc:
+    if df['timestamp'].dt.tz is None or df['timestamp'].dt.tz != UTC:
         raise ValueError("Timestamps must be UTC")
         
     # Monotonic
