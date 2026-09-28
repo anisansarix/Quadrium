@@ -26,6 +26,19 @@ def validate_dataframe(df: pd.DataFrame, expected_symbol: str | None = None, exp
     if expected_symbol and (df['symbol'] != expected_symbol).any():
         raise ValueError("Symbol consistency check failed")
         
+    if not pd.api.types.is_datetime64_any_dtype(df['timestamp']):
+        raise ValueError("timestamp must be datetime")
+        
+    if is_bars:
+        for c in ['open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']:
+            if not pd.api.types.is_numeric_dtype(df[c]):
+                raise ValueError(f"{c} must be numeric")
+                
+    if is_ticks:
+        for c in ['bid', 'ask']:
+            if not pd.api.types.is_numeric_dtype(df[c]):
+                raise ValueError(f"{c} must be numeric")
+        
     if is_bars and expected_timeframe:
         if 'timeframe' not in cols:
             raise ValueError("Missing timeframe column")

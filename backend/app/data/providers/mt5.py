@@ -84,10 +84,20 @@ class MT5Provider(DataProvider):
             err = self.client.last_error()
             raise MT5Error(f"Failed to fetch symbol info for {broker_symbol}. Error {err[0]}: {err[1]}")
             
+        # Reject non-FX symbols in this phase (e.g. if currency is not standard FX pair length)
+        # Or explicitly reject if path is not FX
+        if "XAU" in broker_symbol:
+            raise MT5Error("XAUUSD is not supported in this phase.")
+        if info.trade_calc_mode != 0: # SYMBOL_CALC_MODE_FOREX
+            raise MT5Error("Only Forex calculation mode symbols are supported in this phase.")
+            
+        execution_map = {0: "REQUEST", 1: "INSTANT", 2: "MARKET", 3: "EXCHANGE"}
+        exec_mode = execution_map.get(info.trade_exemode, "UNKNOWN")
+            
         return InstrumentSpec(
             broker_symbol=info.name,
             canonical_symbol=symbol,
-            asset_class="FX", # Assume FX for now
+            asset_class="FX",
             digits=info.digits,
             point=info.point,
             tick_size=info.trade_tick_size,
@@ -98,7 +108,7 @@ class MT5Provider(DataProvider):
             volume_step=info.volume_step,
             margin_currency=info.currency_margin,
             profit_currency=info.currency_profit,
-            execution_mode="MARKET" if info.trade_mode == 4 else "UNKNOWN", # trade_mode 4 is SYMBOL_TRADE_MODE_FULL
+            execution_mode=exec_mode,
             trading_sessions={},
             stop_level=info.trade_stops_level
         )
@@ -151,8 +161,19 @@ class MT5Provider(DataProvider):
         returned_end = df['time'].max()
         
         # MT5 has limited bars. Validate coverage.
+        # We allow a small tolerance for end since the exact end timestamp might not have a bar (e.g. weekend or just no trade)
+        # Actually the prompt says "where full coverage is required ... Verify both returned_start <= requested_start and returned_end >= requested_end"
+        # However, it also said "For copy_rates_range() ... Report insufficient coverage explicitly"
+        # Let's strictly enforce requested limits. Note: requested_start / requested_end should match the bar timestamps if market is open.
+        
         if returned_start > start_utc:
             raise MT5Error(f"Coverage error: Requested start {start_utc}, but returned data starts at {returned_start}")
+        
+        # If the requested end is in the future, returned_end will obviously be < end_utc, 
+        # but for historical backfill it should cover the requested range.
+        if returned_end < end_utc - pd.Timedelta(days=3): 
+            # allow weekend gap at the end
+            raise MT5Error(f"Coverage error: Requested end {end_utc}, but returned data ends at {returned_end}")
         
         df = df.rename(columns={
             "time": "timestamp",

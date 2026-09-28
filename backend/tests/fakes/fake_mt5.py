@@ -18,7 +18,8 @@ class FakeSymbolInfo:
     volume_step: float = 0.01
     currency_margin: str = "USD"
     currency_profit: str = "USD"
-    trade_mode: int = 4
+    trade_calc_mode: int = 0
+    trade_exemode: int = 2
     trade_stops_level: int = 0
 
 @dataclass
@@ -59,18 +60,32 @@ class FakeMT5Client(MT5Client):
         return True
         
     def copy_rates_range(self, symbol: str, timeframe: int, date_from: datetime.datetime, date_to: datetime.datetime) -> Any:
+        if symbol not in self.symbols:
+            self._last_error = (-1, "Symbol not found")
+            return None
+        import numpy as np
         if not self.rates:
             self._last_error = (-1, "No data")
             return None
-        import numpy as np
-        return np.array(self.rates)
+            
+        start_ts = int(date_from.timestamp())
+        end_ts = int(date_to.timestamp())
+        filtered = [r for r in self.rates if start_ts <= r[0] <= end_ts]
+        return np.array(filtered) if filtered else None
         
     def copy_ticks_range(self, symbol: str, date_from: datetime.datetime, date_to: datetime.datetime, flags: int) -> Any:
+        if symbol not in self.symbols:
+            self._last_error = (-1, "Symbol not found")
+            return None
+        import numpy as np
         if not self.ticks:
             self._last_error = (-1, "No data")
             return None
-        import numpy as np
-        return np.array(self.ticks)
+            
+        start_ts = int(date_from.timestamp())
+        end_ts = int(date_to.timestamp())
+        filtered = [t for t in self.ticks if start_ts <= t[0] <= end_ts]
+        return np.array(filtered) if filtered else None
         
     def account_info(self) -> Any:
         return FakeAccountInfo(currency=self.account_currency)
