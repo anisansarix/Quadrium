@@ -544,11 +544,12 @@ def test_ingestion_ticks_present_bar_missing_fail():
 
 
 def test_ingestion_multi_chunk_stitching(tmp_path):
-    from datetime import datetime, UTC, timedelta
+    from datetime import UTC, datetime, timedelta
     from unittest.mock import MagicMock
-    from app.data.datasets import DatasetManager
+
     from app.data.catalog import DatasetCatalog
     from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
     from app.data.downloader import MT5Downloader
     from app.data.providers.mt5 import MT5Provider
     
@@ -577,7 +578,6 @@ def test_ingestion_multi_chunk_stitching(tmp_path):
     
     def mock_copy_rates_range(symbol, timeframe, start, end):
         import pandas as pd
-        import numpy as np
         dates = pd.date_range(start, end, inclusive='left', freq='1min')
         if len(dates) == 0: return None
         df = pd.DataFrame({'time': dates})
@@ -615,11 +615,12 @@ def test_ingestion_multi_chunk_stitching(tmp_path):
     assert df['timestamp'].max() == end_ts - timedelta(minutes=1)
 
 def test_ingestion_dataset_identity_differs_by_range(tmp_path):
-    from datetime import datetime, UTC
+    from datetime import UTC, datetime
     from unittest.mock import MagicMock
-    from app.data.datasets import DatasetManager
+
     from app.data.catalog import DatasetCatalog
     from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
     from app.data.downloader import MT5Downloader
     from app.data.providers.mt5 import MT5Provider
     
@@ -648,7 +649,6 @@ def test_ingestion_dataset_identity_differs_by_range(tmp_path):
     
     def mock_copy_rates_range(symbol, timeframe, start, end):
         import pandas as pd
-        import numpy as np
         dates = pd.date_range(start, end, inclusive='left', freq='1min')
         if len(dates) == 0: return None
         df = pd.DataFrame({'time': dates})
@@ -690,12 +690,13 @@ def test_ingestion_dataset_identity_differs_by_range(tmp_path):
 
 
 def test_source_bar_outside_session_fails(tmp_path):
-    from datetime import datetime, time, UTC
+    from datetime import UTC, datetime, time
     from unittest.mock import MagicMock
+
     import pandas as pd
-    from app.data.datasets import DatasetManager
     from app.data.catalog import DatasetCatalog
     from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
     from app.data.downloader import MT5Downloader
     from app.data.providers.mt5 import MT5Provider
 
@@ -753,12 +754,13 @@ def test_source_bar_outside_session_fails(tmp_path):
         downloader.download_bars("EURUSD", "M1", datetime(2023, 1, 2, 0, 0, tzinfo=UTC), datetime(2023, 1, 2, 23, 59, tzinfo=UTC))
 
 def test_multiple_weekly_windows(tmp_path):
-    from datetime import datetime, time, UTC
+    from datetime import UTC, datetime, time
     from unittest.mock import MagicMock
+
     import pandas as pd
-    from app.data.datasets import DatasetManager
     from app.data.catalog import DatasetCatalog
     from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
+    from app.data.datasets import DatasetManager
     from app.data.downloader import MT5Downloader
     from app.data.providers.mt5 import MT5Provider
 
