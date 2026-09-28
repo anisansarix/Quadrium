@@ -1,38 +1,46 @@
 from datetime import datetime
-from uuid import UUID
 
 from pydantic import BaseModel
 
+from app.domain.models import ClosedTrade
 
-class TradeRecord(BaseModel):
-    id: UUID
-    timestamp: datetime
+
+class ExecutionRecord(BaseModel):
+    order_id: str
     symbol: str
     side: str
     volume: float
     requested_price: float
     fill_price: float
-    sl: float | None = None
-    tp: float | None = None
+    timestamp: datetime
+    realized_pnl: float
     commission: float
     swap: float
-    realized_pnl: float
-    unrealized_pnl: float
+
+class EquityRecord(BaseModel):
+    timestamp: datetime
     balance: float
     equity: float
+    floating_pnl: float
+    realized_pnl: float
+    commission: float
+    swap: float
+    margin: float
+    margin_free: float
     drawdown: float
-    risk_decision: str
-    risk_policy_version: str
+    daily_pnl: float
 
 class Ledger:
     def __init__(self):
-        self.trades: list[TradeRecord] = []
+        self.executions: list[ExecutionRecord] = []
+        self.closed_trades: list[ClosedTrade] = []
+        self.equity_curve: list[EquityRecord] = []
 
-    def append(self, record: TradeRecord):
-        self.trades.append(record)
+    def append_execution(self, record: ExecutionRecord):
+        self.executions.append(record)
 
-    def to_dataframe(self):
-        import pandas as pd
-        if not self.trades:
-            return pd.DataFrame()
-        return pd.DataFrame([t.model_dump() for t in self.trades])
+    def append_closed_trade(self, record: ClosedTrade):
+        self.closed_trades.append(record)
+        
+    def append_equity_record(self, record: EquityRecord):
+        self.equity_curve.append(record)

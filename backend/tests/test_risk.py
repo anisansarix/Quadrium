@@ -78,7 +78,7 @@ def test_risk_drawdown_rejection(base_context, base_policy):
     engine = RiskEngine()
     intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)
     decision = engine.evaluate(base_context, intent, base_policy, proposed_target=1.0, proposed_volume=1.0)
-    assert decision.state == RiskDecisionState.REJECT
+    assert decision.state == RiskDecisionState.FLATTEN
     assert any("Max drawdown exceeded" in v for v in decision.violations)
     
 def test_risk_daily_loss_rejection(base_context, base_policy):
@@ -86,5 +86,5 @@ def test_risk_daily_loss_rejection(base_context, base_policy):
     engine = RiskEngine()
     intent = OrderIntent(symbol="EURUSD", side=OrderSide.BUY, type=OrderType.MARKET, volume=1.0)
     decision = engine.evaluate(base_context, intent, base_policy, proposed_target=1.0, proposed_volume=1.0)
-    assert decision.state == RiskDecisionState.REJECT
+    assert decision.state == RiskDecisionState.FREEZE
     assert any("Max daily loss exceeded" in v for v in decision.violations)

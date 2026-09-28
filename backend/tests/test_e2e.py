@@ -76,8 +76,8 @@ def test_full_deterministic_research_flow() -> None:
             approved = pipeline.process(target_pos, context, policy)
             if approved:
                 res = sim.submit_order(approved)
-                if res.success and res.fill:
-                    trade_ledger.append(res.fill)
+                if res.success and res.fills:
+                    trade_ledger.append(res.fills[0])
     
     for pos in sim.positions:
         if pos.state.value == "OPEN":

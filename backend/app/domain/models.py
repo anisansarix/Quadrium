@@ -19,6 +19,11 @@ class PositionState(str, Enum):
     OPEN = "OPEN"
     CLOSED = "CLOSED"
 
+class AccountState(str, Enum):
+    NORMAL = "NORMAL"
+    FREEZE = "FREEZE"
+    FLATTEN_AND_FREEZE = "FLATTEN_AND_FREEZE"
+
 class RiskDecisionState(str, Enum):
     APPROVE = "APPROVE"
     CLAMP = "CLAMP"
@@ -90,6 +95,7 @@ class AccountSnapshot(BaseModel):
     margin_free: float
     margin_level: float
     currency: str
+    state: AccountState = AccountState.NORMAL
 
 class Position(BaseModel):
     id: UUID
@@ -170,12 +176,31 @@ class Fill(BaseModel):
     timestamp: datetime
     commission: float
     swap: float
+    realized_pnl: float = 0.0
+
+class ClosedTrade(BaseModel):
+    trade_id: str
+    symbol: str
+    side: str
+    entry_time: datetime
+    exit_time: datetime
+    entry_price: float
+    exit_price: float
+    entry_volume: float
+    exit_volume: float
+    gross_pnl: float
+    commission: float
+    swap: float
+    net_pnl: float
+    holding_seconds: float
+    exit_reason: str
 
 class ExecutionResult(BaseModel):
     success: bool
     order_id: str | None = None
     error_message: str | None = None
-    fill: Fill | None = None
+    fills: list[Fill] = []
+    closed_trades: list[ClosedTrade] = []
 
 class DatasetManifest(BaseModel):
     source: str
@@ -212,3 +237,11 @@ class ExperimentResult(BaseModel):
     mlflow_run_id: str | None = None
     metrics: dict[str, Any] | None = None
     artifacts: list[str] = []
+
+class BacktestResult(BaseModel):
+    experiment_result: ExperimentResult
+    equity_curve: list[Any]
+    closed_trades: list[Any]
+    executions: list[Any]
+    risk_events: list[Any]
+    metrics: dict[str, Any]
