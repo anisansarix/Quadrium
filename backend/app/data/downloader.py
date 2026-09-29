@@ -15,12 +15,18 @@ from app.data.validation import validate_dataframe, validate_raw_chunk
 from app.domain.models import DatasetManifest
 
 
+class RawChunkArtifact(BaseModel):
+    path: str
+    canonical_start: datetime.datetime
+    canonical_end: datetime.datetime
+
 class DatasetArtifact(BaseModel):
     dataset_id: str
     dataset_hash: str
     manifest: DatasetManifest
     canonical_path: str
     raw_paths: list[str]
+    raw_chunks: list[RawChunkArtifact]
     gap_report: GapReport
     quality_report: DataQualityReport
 
@@ -159,6 +165,7 @@ class MT5Downloader:
             manifest=manifest,
             canonical_path=str(canonical_path),
             raw_paths=[str(p[0]) for p in chunk_paths],
+            raw_chunks=[RawChunkArtifact(path=str(p[0]), canonical_start=p[1], canonical_end=p[2]) for p in chunk_paths],
             gap_report=gap_report,
             quality_report=quality_report
         )

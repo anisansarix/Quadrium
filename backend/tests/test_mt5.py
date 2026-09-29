@@ -243,7 +243,7 @@ def test_ingestion_fails_duplicate():
     start = datetime(2023, 1, 2, tzinfo=UTC)
     end = datetime(2023, 1, 3, tzinfo=UTC)
     
-    with pytest.raises(ValueError, match="Duplicate timestamps found"):
+    with pytest.raises(ValueError, match="Source defect: Raw chunk for EURUSD M1 contains 2 duplicated rows"):
         workflow.download_bars("EURUSD", "M1", start, end, chunk_days=1)
         
     import shutil

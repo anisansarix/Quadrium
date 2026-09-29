@@ -8,27 +8,32 @@ import pandas as pd
 from app.data.catalog import DatasetCatalog
 from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
 from app.data.datasets import DatasetManager
-from app.data.downloader import MT5Downloader
+from app.data.downloader import MT5Downloader, RawChunkArtifact
 from app.data.providers.mt5 import MT5Provider
 from app.data.time_profile import get_metaquotes_demo_phase1_profile, utc_to_mt5_label
 
 
-def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, start_ts, end_ts):
+def verify_raw_canonical_equivalence(raw_chunks: list[RawChunkArtifact], canonical_path, time_profile, start_ts, end_ts):
     df_canonical = pd.read_parquet(canonical_path)
     
     # 1. Load each chunk individually and verify NO internal duplicates
     dfs = []
-    for f in raw_files:
-        df_chunk = pd.read_parquet(f)
+    chunk_dfs = []
+    for chunk in raw_chunks:
+        df_chunk = pd.read_parquet(chunk.path)
         if df_chunk.duplicated(subset=["time"]).any():
-            raise AssertionError(f"Duplicate raw timestamps found WITHIN single chunk: {f}")
+            raise AssertionError(f"Duplicate raw timestamps found WITHIN single chunk: {chunk.path}")
+        
+        # Translate to timestamp to know its canonical time
+        df_chunk = time_profile.add_canonical_column(df_chunk, raw_col="time", new_col="translated_timestamp")
+        chunk_dfs.append((chunk, df_chunk))
         dfs.append(df_chunk)
         
-    df_raw = pd.concat(dfs)
+    df_raw_translated = pd.concat(dfs)
     
-    assert "time" in df_raw.columns, "raw time is present"
-    assert "timestamp" not in df_raw.columns, "raw timestamp is NOT present"
-    assert pd.api.types.is_integer_dtype(df_raw['time']), "raw time remains integer/source-domain data"
+    assert "time" in df_raw_translated.columns, "raw time is present"
+    assert "timestamp" not in df_raw_translated.columns, "raw timestamp is NOT present"
+    assert pd.api.types.is_integer_dtype(df_raw_translated['time']), "raw time remains integer/source-domain data"
     
     assert "timestamp" in df_canonical.columns, "canonical timestamp exists"
     assert "time" not in df_canonical.columns, "canonical Parquet does not contain source time"
@@ -36,25 +41,67 @@ def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, st
     assert df_canonical["timestamp"].dt.tz is not None, "canonical timestamps are UTC (aware)"
     assert str(df_canonical["timestamp"].dt.tz) == "UTC", "canonical timestamps are exactly UTC"
     
-    first_raw = df_raw['time'].min()
+    first_raw = df_raw_translated['time'].min()
     canon_min_epoch = int(df_canonical["timestamp"].min().timestamp())
     assert first_raw != canon_min_epoch, "raw and canonical values represent different time domains"
     
-    df_raw_translated = time_profile.add_canonical_column(df_raw.copy(), raw_col="time", new_col="translated_timestamp")
+    # Sort chunks by their canonical_start
+    chunk_dfs.sort(key=lambda x: x[0].canonical_start)
     
-    mask = (df_raw_translated['translated_timestamp'] >= start_ts) & (df_raw_translated['translated_timestamp'] < end_ts)
-    df_raw_filtered = df_raw_translated[mask].copy()
-    
-    # Check cross-chunk duplicates
-    dups = df_raw_filtered[df_raw_filtered.duplicated(subset=["time"], keep=False)]
-    if not dups.empty:
-        unique_dups = dups.drop_duplicates()
-        if len(unique_dups) != len(dups['time'].unique()):
-            raise AssertionError("Duplicate raw timestamps found across boundary chunks with CONFLICTING payload data")
+    # Validate cross-chunk duplicates
+    for i in range(len(chunk_dfs) - 1):
+        c1, df1 = chunk_dfs[i]
+        c2, df2 = chunk_dfs[i+1]
         
-    # Safely drop exactly identical cross-chunk boundary duplicates
-    df_raw_filtered = df_raw_filtered.drop_duplicates()
-    assert not df_raw_filtered.duplicated(subset=["time"]).any(), "Unexpected duplicate timestamps remain"
+        # Shared boundary should be c1.canonical_end (which == c2.canonical_start)
+        shared_boundary = c1.canonical_end
+        if shared_boundary != c2.canonical_start:
+            # They are not strictly adjacent, or there's a gap/overlap in requests, 
+            # but we only validate duplicates. Any duplicate outside exact shared boundary is a FAIL.
+            pass
+
+    # Find duplicates across all chunks
+    dups = df_raw_translated[df_raw_translated.duplicated(subset=["time"], keep=False)]
+    if not dups.empty:
+        # Check every duplicate group
+        for t, group in dups.groupby("time"):
+            if len(group) > 2:
+                raise AssertionError(f"Duplicate timestamp {t} appears in more than 2 chunks")
+            
+            # Must appear in exactly two adjacent chunks
+            # Must appear in exactly two adjacent chunks
+            # To know which chunk they came from, let's just find them in chunk_dfs
+            found_in = []
+            for idx, (c, df) in enumerate(chunk_dfs):
+                if t in df['time'].values:
+                    found_in.append(idx)
+                    
+            if len(found_in) != 2 or abs(found_in[0] - found_in[1]) != 1:
+                raise AssertionError("Duplicate timestamp in non-adjacent chunks")
+                
+            c1, df1 = chunk_dfs[found_in[0]]
+            c2, df2 = chunk_dfs[found_in[1]]
+            
+            shared_boundary = c1.canonical_end
+            if shared_boundary != c2.canonical_start:
+                raise AssertionError("Duplicate at adjacent boundary where timestamp is NOT the shared boundary")
+                
+            # The canonical time of this row must exactly equal the shared boundary
+            canon_time = group['translated_timestamp'].iloc[0]
+            if canon_time != shared_boundary:
+                raise AssertionError("Duplicate at adjacent boundary where timestamp is NOT the shared boundary")
+                
+            # Check payload identity
+            payload1 = df1[df1['time'] == t].drop(columns=['translated_timestamp']).iloc[0]
+            payload2 = df2[df2['time'] == t].drop(columns=['translated_timestamp']).iloc[0]
+            if not payload1.equals(payload2):
+                raise AssertionError("Duplicate raw timestamps found across boundary chunks with CONFLICTING payload data")
+                
+    # Safely drop EXACTLY identical boundary duplicates
+    df_raw_filtered = df_raw_translated.drop_duplicates(subset=["time"])
+    
+    mask = (df_raw_filtered['translated_timestamp'] >= start_ts) & (df_raw_filtered['translated_timestamp'] < end_ts)
+    df_raw_filtered = df_raw_filtered[mask].copy()
     
     df_raw_filtered = df_raw_filtered.sort_values("translated_timestamp").reset_index(drop=True)
     df_canonical_sorted = df_canonical.sort_values("timestamp").reset_index(drop=True)
@@ -67,11 +114,15 @@ def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, st
     # 4. Strengthen raw->canonical field equivalence
     expected_fields = ["symbol", "timeframe", "open", "high", "low", "close", "tick_volume", "spread", "real_volume"]
     for col in expected_fields:
-        if col in df_raw_filtered.columns and col in df_canonical_sorted.columns:
-            if not (df_raw_filtered[col] == df_canonical_sorted[col]).all():
-                raise AssertionError(f"Payload column '{col}' differs between raw and canonical representations")
+        if col not in df_raw_filtered.columns:
+            raise AssertionError(f"Required field '{col}' missing from raw representation")
+        if col not in df_canonical_sorted.columns:
+            raise AssertionError(f"Required field '{col}' missing from canonical representation")
             
-    return df_raw, df_canonical
+        if not (df_raw_filtered[col] == df_canonical_sorted[col]).all():
+            raise AssertionError(f"Payload column '{col}' differs between raw and canonical representations")
+            
+    return df_raw_translated, df_canonical
 
 def run_test(start_ts, end_ts, name, calendar):
     print("\n======================================")
@@ -116,10 +167,10 @@ def run_test(start_ts, end_ts, name, calendar):
         artifact = downloader.download_bars("EURUSD", "M1", start_ts, end_ts, chunk_days=2)
         print("\n--- RETURN ---")
         
-        raw_files = [Path(p) for p in artifact.raw_paths]
-        assert len(raw_files) > 0, "Raw Parquet files must exist"
+        raw_chunks = artifact.raw_chunks
+        assert len(raw_chunks) > 0, "Raw chunks must exist"
         
-        df_raw, df_canonical = verify_raw_canonical_equivalence(raw_files, artifact.canonical_path, time_profile, start_ts, end_ts)
+        df_raw, df_canonical = verify_raw_canonical_equivalence(raw_chunks, artifact.canonical_path, time_profile, start_ts, end_ts)
         
         print(f"First Canonical UTC: {df_canonical['timestamp'].min()}")
         print(f"Last Canonical UTC: {df_canonical['timestamp'].max()}")
