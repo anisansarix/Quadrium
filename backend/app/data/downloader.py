@@ -11,7 +11,7 @@ from app.data.gap_diagnostics import diagnose_missing_bars
 from app.data.gaps import GapReport, analyze_gaps
 from app.data.providers.base import DataProvider
 from app.data.quality import DataQualityReport
-from app.data.validation import validate_dataframe
+from app.data.validation import validate_dataframe, validate_raw_chunk
 from app.domain.models import DatasetManifest
 
 
@@ -20,6 +20,7 @@ class DatasetArtifact(BaseModel):
     dataset_hash: str
     manifest: DatasetManifest
     canonical_path: str
+    raw_paths: list[str]
     gap_report: GapReport
     quality_report: DataQualityReport
 
@@ -49,6 +50,7 @@ class MT5Downloader:
             # Fetch
             df_chunk = self.provider.fetch_bars(symbol, timeframe, current_start, current_end)
             if not df_chunk.empty:
+                validate_raw_chunk(df_chunk, symbol, timeframe)
                 # Save raw chunk to disk and free memory
                 raw_path = self.dataset_manager.save_raw(df_chunk, "mt5", symbol, timeframe)
                 chunk_paths.append((raw_path, current_start, current_end))
@@ -156,6 +158,7 @@ class MT5Downloader:
             dataset_hash=manifest.dataset_hash,
             manifest=manifest,
             canonical_path=str(canonical_path),
+            raw_paths=[str(p[0]) for p in chunk_paths],
             gap_report=gap_report,
             quality_report=quality_report
         )

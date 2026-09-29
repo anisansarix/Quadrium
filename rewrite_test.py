@@ -1,10 +1,9 @@
-from datetime import UTC, datetime
-
+script = '''import pytest
 import pandas as pd
-import pytest
-from app.data.time_profile import OffsetPeriod, TimeProfile, get_metaquotes_demo_phase1_profile
+from datetime import datetime, UTC
+from pathlib import Path
+from app.data.time_profile import get_metaquotes_demo_phase1_profile, TimeProfile, OffsetPeriod
 from scripts.mt5_time_translation_acceptance import verify_raw_canonical_equivalence
-
 
 def test_raw_to_canonical_equivalence(tmp_path):
     raw_dir = tmp_path / "raw"
@@ -121,8 +120,8 @@ def test_raw_to_canonical_equivalence(tmp_path):
         verify_raw_canonical_equivalence([c1_file, c2_file], mut_vol_file, profile, start_ts, end_ts)
 
 def test_acceptance_exit_behavior():
+    import sys
     from unittest.mock import patch
-
     from scripts.mt5_time_translation_acceptance import main
     
     with patch("scripts.mt5_time_translation_acceptance.run_test") as mock_run_test:
@@ -140,3 +139,7 @@ def test_acceptance_exit_behavior():
         with pytest.raises(SystemExit) as e:
             main()
         assert e.value.code == 1
+'''
+
+with open('backend/tests/test_acceptance_raw_to_canonical.py', 'w', encoding='utf-8') as f:
+    f.write(script)

@@ -72,3 +72,19 @@ def validate_dataframe(df: pd.DataFrame, expected_symbol: str | None = None, exp
             raise ValueError("bid > ask check failed")
         if 'spread' in cols and (df['spread'] < 0).any():
             raise ValueError("non-negative spread check failed")
+
+def validate_raw_chunk(df: pd.DataFrame, expected_symbol: str, expected_timeframe: str) -> None:
+    if df.empty:
+        return
+        
+    if "time" not in df.columns:
+        raise ValueError(f"Raw chunk missing 'time' column for {expected_symbol} {expected_timeframe}")
+        
+    if not pd.api.types.is_integer_dtype(df["time"]):
+        raise ValueError(f"Raw chunk 'time' must be integer, got {df['time'].dtype} for {expected_symbol} {expected_timeframe}")
+        
+    dups = df[df.duplicated(subset=["time"], keep=False)]
+    if not dups.empty:
+        count = len(dups)
+        sample_time = dups["time"].iloc[0]
+        raise ValueError(f"Source defect: Raw chunk for {expected_symbol} {expected_timeframe} contains {count} duplicated rows. Example raw time: {sample_time}")

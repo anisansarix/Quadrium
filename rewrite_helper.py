@@ -1,6 +1,6 @@
-import os
-import shutil
+script = '''import os
 import sys
+import shutil
 from datetime import UTC, datetime, time
 from pathlib import Path
 
@@ -11,7 +11,6 @@ from app.data.datasets import DatasetManager
 from app.data.downloader import MT5Downloader
 from app.data.providers.mt5 import MT5Provider
 from app.data.time_profile import get_metaquotes_demo_phase1_profile, utc_to_mt5_label
-
 
 def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, start_ts, end_ts):
     df_canonical = pd.read_parquet(canonical_path)
@@ -74,7 +73,7 @@ def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, st
     return df_raw, df_canonical
 
 def run_test(start_ts, end_ts, name, calendar):
-    print("\n======================================")
+    print("\\n======================================")
     print(f"RUNNING ACCEPTANCE: {name}")
     print("======================================")
     
@@ -103,7 +102,7 @@ def run_test(start_ts, end_ts, name, calendar):
         
     downloader = MT5Downloader(provider, manager, catalog, calendar)
     
-    print("\n--- REQUEST ---")
+    print("\\n--- REQUEST ---")
     print(f"Quadrium UTC Start: {start_ts}")
     print(f"Quadrium UTC End: {end_ts}")
     
@@ -114,7 +113,7 @@ def run_test(start_ts, end_ts, name, calendar):
     
     try:
         artifact = downloader.download_bars("EURUSD", "M1", start_ts, end_ts, chunk_days=2)
-        print("\n--- RETURN ---")
+        print("\\n--- RETURN ---")
         
         raw_files = [Path(p) for p in artifact.raw_paths]
         assert len(raw_files) > 0, "Raw Parquet files must exist"
@@ -135,7 +134,7 @@ def run_test(start_ts, end_ts, name, calendar):
         assert sm["canonical_time_basis"] == "UTC", "canonical_time_basis is not correct"
         assert sm["time_profile_id"] == "metaquotes_demo_eurusd_phase1_v1", "time_profile_id is not correct"
         
-        print("\n--- METRICS ---")
+        print("\\n--- METRICS ---")
         qr = artifact.quality_report
         print(f"Expected Bars: {qr.expected_bars}")
         print(f"Observed Bars: {qr.observed_bars}")
@@ -146,20 +145,20 @@ def run_test(start_ts, end_ts, name, calendar):
         
         first_valid = df_canonical['timestamp'].min() >= start_ts
         last_valid = df_canonical['timestamp'].max() < end_ts
-        print(f"\nFirst Canonical >= Requested Start: {first_valid}")
+        print(f"\\nFirst Canonical >= Requested Start: {first_valid}")
         print(f"Last Canonical < Requested End: {last_valid}")
         print(f"No Extras: {qr.unexpected_extra_bars == 0}")
         
         if first_valid and last_valid and qr.quality_status == "PASS" and qr.unexpected_extra_bars == 0:
-            print("\nRESULT: PASS")
+            print("\\nRESULT: PASS")
             return True
         else:
-            print("\nRESULT: FAIL")
+            print("\\nRESULT: FAIL")
             return False
             
     except Exception as e:
         import traceback
-        print(f"\nRESULT: FAIL - Exception during download: {e}")
+        print(f"\\nRESULT: FAIL - Exception during download: {e}")
         traceback.print_exc()
         return False
 
@@ -187,3 +186,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+'''
+
+with open('backend/scripts/mt5_time_translation_acceptance.py', 'w', encoding='utf-8') as f:
+    f.write(script)
