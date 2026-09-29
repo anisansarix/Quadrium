@@ -39,18 +39,18 @@ class PolicySimulator:
         self.max_position_units = max_position_units
 
         self.position: Position | None = None
-        self.current_time: datetime | None = None
+
+        # Timing trackers
+        self.current_time: datetime | None = None # Execution/decision timestamp
         self.last_valid_close: float | None = None
+        self.last_valid_spread: float | None = None
         self.account_state = AccountState.NORMAL
 
         self.step_counter = 0
         self.fill_counter = 0
         self.position_counter = 0
 
-    def get_portfolio_state(self, mark_price_bid: float, spread: float) -> PortfolioState:
-        if self.current_time is None:
-            raise ValueError("Cannot get portfolio state before simulator has started")
-
+    def get_portfolio_state(self, mark_price_bid: float, spread: float, timestamp: datetime) -> PortfolioState:
         unrealized = 0.0
         pos_dict = {}
         if self.position and self.position.state == PositionState.OPEN:
@@ -62,7 +62,7 @@ class PolicySimulator:
             pos_dict[self.symbol] = self.position
 
         return PortfolioState(
-            timestamp=self.current_time,
+            timestamp=timestamp,
             balance=self.balance,
             equity=self.balance + unrealized,
             unrealized_pnl=unrealized,
@@ -141,7 +141,7 @@ class PolicySimulator:
         )
         return fill
 
-    def process_step(self, action: ActionProposal | None, next_row: pd.Series | None) -> SimulatorStepResult:
+    def process_step(self, action: ActionProposal | None, next_row: pd.Series | None, next_obs_time: datetime | None = None) -> SimulatorStepResult:
         self.step_counter += 1
 
         if action and action.symbol != self.symbol:
@@ -153,29 +153,35 @@ class PolicySimulator:
             if self.position and self.position.state == PositionState.OPEN:
                 if self.last_valid_close is None or self.current_time is None:
                     raise ValueError("Cannot flatten on end-of-data with no last valid close/timestamp")
-                f, p = self._flatten_position(self.last_valid_close, 0.0, self.current_time)
+
+                spread = self.last_valid_spread if self.last_valid_spread is not None else 0.0
+                f, p = self._flatten_position(self.last_valid_close, spread, self.current_time)
                 fills.append(f)
                 realized_pnl += p
 
+            # Use current_time as the termination timestamp
+            term_time = self.current_time if self.current_time is not None else datetime.now(UTC)
+
             return SimulatorStepResult(
-                timestamp=self.current_time or datetime.now(UTC),
+                timestamp=term_time,
                 observation=None,
-                portfolio=self.get_portfolio_state(self.last_valid_close or 0.0, 0.0),
+                portfolio=self.get_portfolio_state(self.last_valid_close or 0.0, self.last_valid_spread or 0.0, term_time),
                 fills=fills,
                 realized_pnl=realized_pnl,
                 is_done=True,
                 info={"reason": "END_OF_DATA"}
             )
 
-        timestamp: datetime = next_row['timestamp']
-        self.current_time = timestamp
+        # Decision / Execution time
+        exec_timestamp: datetime = next_row['timestamp']
+        self.current_time = exec_timestamp
 
         if pd.isna(next_row['open']):
             exec_price = self.last_valid_close
+            exec_spread = self.last_valid_spread if self.last_valid_spread is not None else 0.0
         else:
             exec_price = float(next_row['open'])
-
-        spread = float(next_row['spread']) * self.cost_model.point_value if not pd.isna(next_row.get('spread')) else 0.0
+            exec_spread = float(next_row['spread']) * self.cost_model.point_value if not pd.isna(next_row.get('spread')) else 0.0
 
         if next_row['feature_state'] == FeatureState.INVALID:
             fills = []
@@ -183,14 +189,14 @@ class PolicySimulator:
             if self.position and self.position.state == PositionState.OPEN:
                 if exec_price is None:
                     raise ValueError("No valid execution price available to flatten invalid state")
-                f, p = self._flatten_position(exec_price, spread, timestamp)
+                f, p = self._flatten_position(exec_price, exec_spread, exec_timestamp)
                 fills.append(f)
                 realized_pnl += p
 
             return SimulatorStepResult(
-                timestamp=timestamp,
+                timestamp=exec_timestamp,
                 observation=None,
-                portfolio=self.get_portfolio_state(exec_price or 0.0, spread),
+                portfolio=self.get_portfolio_state(exec_price or 0.0, exec_spread, exec_timestamp),
                 fills=fills,
                 realized_pnl=realized_pnl,
                 is_done=True,
@@ -198,11 +204,16 @@ class PolicySimulator:
             )
 
         if next_row['feature_state'] == FeatureState.WARMUP:
-            self.last_valid_close = float(next_row['close']) if not pd.isna(next_row.get('close')) else self.last_valid_close
+            if not pd.isna(next_row.get('close')):
+                self.last_valid_close = float(next_row['close'])
+            if not pd.isna(next_row.get('spread')):
+                self.last_valid_spread = float(next_row['spread']) * self.cost_model.point_value
+
+            obs_time = next_obs_time if next_obs_time else exec_timestamp
             return SimulatorStepResult(
-                timestamp=timestamp,
+                timestamp=exec_timestamp,
                 observation=None,
-                portfolio=self.get_portfolio_state(self.last_valid_close or 0.0, spread),
+                portfolio=self.get_portfolio_state(self.last_valid_close or 0.0, self.last_valid_spread or 0.0, exec_timestamp),
                 fills=[],
                 realized_pnl=0.0,
                 is_done=False,
@@ -221,19 +232,19 @@ class PolicySimulator:
 
             if self.position and self.position.state == PositionState.OPEN:
                 if target_side is None:
-                    f, p = self._flatten_position(exec_price, spread, timestamp)
+                    f, p = self._flatten_position(exec_price, exec_spread, exec_timestamp)
                     fills.append(f)
                     realized_pnl += p
                 elif target_side != self.position.side:
-                    f, p = self._flatten_position(exec_price, spread, timestamp)
+                    f, p = self._flatten_position(exec_price, exec_spread, exec_timestamp)
                     fills.append(f)
                     realized_pnl += p
-                    f2 = self._open_position(target_vol, target_side, exec_price, spread, timestamp)
+                    f2 = self._open_position(target_vol, target_side, exec_price, exec_spread, exec_timestamp)
                     fills.append(f2)
                 else:
                     vol_diff = target_vol - self.position.volume
                     if vol_diff > 1e-7:
-                        f, actual_price = self._execute_trade(vol_diff, target_side, exec_price, spread, timestamp, ExecutionRole.INCREASE)
+                        f, actual_price = self._execute_trade(vol_diff, target_side, exec_price, exec_spread, exec_timestamp, ExecutionRole.INCREASE)
                         old_value = self.position.volume * self.position.open_price
                         new_value = vol_diff * actual_price
                         self.position.volume += vol_diff
@@ -244,7 +255,7 @@ class PolicySimulator:
                     elif vol_diff < -1e-7:
                         reduce_vol = abs(vol_diff)
                         close_side = OrderSide.SELL if self.position.side == OrderSide.BUY else OrderSide.BUY
-                        f, actual_price = self._execute_trade(reduce_vol, close_side, exec_price, spread, timestamp, ExecutionRole.REDUCE)
+                        f, actual_price = self._execute_trade(reduce_vol, close_side, exec_price, exec_spread, exec_timestamp, ExecutionRole.REDUCE)
 
                         if self.position.side == OrderSide.BUY:
                             rp = (actual_price - self.position.open_price) * reduce_vol * self.cost_model.contract_size
@@ -258,21 +269,27 @@ class PolicySimulator:
                         fills.append(f)
             else:
                 if target_side is not None and target_vol > 1e-7:
-                    f = self._open_position(target_vol, target_side, exec_price, spread, timestamp)
+                    f = self._open_position(target_vol, target_side, exec_price, exec_spread, exec_timestamp)
                     fills.append(f)
 
+        # Update valid tracking for next steps
         self.last_valid_close = float(next_row['close'])
+        self.last_valid_spread = float(next_row['spread']) * self.cost_model.point_value
+
+        # The observation is available at next_obs_time (which is t+2*delta if next_row is [t+delta, t+2*delta))
+        obs_time = next_obs_time if next_obs_time else exec_timestamp
+
         obs = MarketObservation(
-            timestamp=timestamp,
+            timestamp=obs_time,
             symbol=self.symbol,
             features={c: float(next_row[c]) for c in ['ret_1', 'spread_level'] if c in next_row and not pd.isna(next_row[c])},
             close_price=self.last_valid_close
         )
 
         return SimulatorStepResult(
-            timestamp=timestamp,
+            timestamp=exec_timestamp,
             observation=obs,
-            portfolio=self.get_portfolio_state(self.last_valid_close, spread),
+            portfolio=self.get_portfolio_state(self.last_valid_close, self.last_valid_spread, obs_time),
             fills=fills,
             realized_pnl=realized_pnl,
             is_done=False,
