@@ -49,6 +49,18 @@ class PolicySimulator:
         self.step_counter = 0
         self.fill_counter = 0
         self.position_counter = 0
+        self.initial_balance = initial_balance
+
+    def reset(self):
+        self.balance = self.initial_balance if hasattr(self, 'initial_balance') else self.balance
+        self.position = None
+        self.current_time = None
+        self.last_valid_close = None
+        self.last_valid_spread = None
+        self.account_state = AccountState.NORMAL
+        self.step_counter = 0
+        self.fill_counter = 0
+        self.position_counter = 0
 
     def get_portfolio_state(self, mark_price_bid: float, spread: float, timestamp: datetime) -> PortfolioState:
         unrealized = 0.0
@@ -295,3 +307,4 @@ class PolicySimulator:
             is_done=False,
             info={}
         )
+
