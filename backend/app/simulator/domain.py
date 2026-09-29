@@ -22,18 +22,11 @@ class ActionProposal(BaseModel):
     # This targets ABSOLUTE exposure, not a change in exposure.
     # The execution model will diff this against current exposure to generate trades.
 
-class ExecutionRequest(BaseModel):
-    symbol: str
-    target_weight: float
-    decision_time: datetime
-    execution_time: datetime  # The time of the next available price
-
 class PortfolioState(BaseModel):
     timestamp: datetime
     balance: float
     equity: float
     unrealized_pnl: float
-    step_reward: float = 0.0
     positions: dict[str, Position]
     state: AccountState
 
@@ -43,7 +36,5 @@ class SimulatorStepResult(BaseModel):
     portfolio: PortfolioState
     fills: list[Fill]
     realized_pnl: float
-    step_reward: float = 0.0
     is_done: bool
     info: dict[str, Any]
-
