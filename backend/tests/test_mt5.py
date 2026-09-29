@@ -605,8 +605,7 @@ def test_ingestion_multi_chunk_stitching(tmp_path):
     client.copy_rates_range.side_effect = mock_copy_rates_range
     client.copy_ticks_range.return_value = None
     
-    provider = MT5Provider(time_profile=TP_UTC)
-    provider.client = client
+    provider = MT5Provider(time_profile=TP_UTC, client=client)
     
     config = ConfigurableCalendarConfig(
         sessions=[SessionWindow(start_day=0, start_time=datetime.min.time(), end_day=4, end_time=datetime.max.time())]
@@ -680,8 +679,7 @@ def test_ingestion_dataset_identity_differs_by_range(tmp_path):
     client.copy_rates_range.side_effect = mock_copy_rates_range
     client.copy_ticks_range.return_value = None
             
-    provider = MT5Provider(time_profile=TP_UTC)
-    provider.client = client
+    provider = MT5Provider(time_profile=TP_UTC, client=client)
     
     config = ConfigurableCalendarConfig(
         sessions=[SessionWindow(start_day=0, start_time=datetime.min.time(), end_day=4, end_time=datetime.max.time())]
@@ -760,8 +758,7 @@ def test_source_bar_outside_session_fails(tmp_path):
     client.copy_rates_range.side_effect = mock_copy_rates_range
     client.copy_ticks_range.return_value = None
 
-    provider = MT5Provider(time_profile=TP_UTC)
-    provider.client = client
+    provider = MT5Provider(time_profile=TP_UTC, client=client)
 
     downloader = MT5Downloader(provider, manager, catalog, calendar)
 
@@ -835,8 +832,7 @@ def test_multiple_weekly_windows(tmp_path):
     client.copy_rates_range.side_effect = mock_copy_rates_range
     client.copy_ticks_range.return_value = None
 
-    provider = MT5Provider(time_profile=TP_UTC)
-    provider.client = client
+    provider = MT5Provider(time_profile=TP_UTC, client=client)
     downloader = MT5Downloader(provider, manager, catalog, calendar)
 
     artifact = downloader.download_bars("EURUSD", "M1", datetime(2023, 1, 2, 0, 0, tzinfo=UTC), datetime(2023, 1, 2, 23, 59, tzinfo=UTC))
