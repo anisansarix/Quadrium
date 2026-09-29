@@ -320,3 +320,28 @@ class BacktestResult(BaseModel):
     executions: list[ExecutionRecord]
     risk_events: list[RiskDecision]
     metrics: dict[str, Any]
+
+
+
+
+
+class DataState(str, Enum):
+    OBSERVED = "OBSERVED"
+    SOURCE_SPARSE = "SOURCE_SPARSE"
+    INVALID = "INVALID"
+
+class FeatureManifest(BaseModel):
+    feature_dataset_id: str
+    source_dataset_hash: str
+    symbol: str
+    source_timeframe: str
+    feature_timeframe: str
+    feature_schema_version: str
+    transformation_version: str
+    configuration_version: str
+    feature_fingerprint: str
+    timestamp_start: datetime
+    timestamp_end: datetime
+    row_count: int
+    created_at: datetime
+    feature_columns: list[str]
