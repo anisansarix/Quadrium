@@ -1,6 +1,6 @@
 import os
-import sys
 import shutil
+import sys
 from datetime import UTC, datetime, time
 from pathlib import Path
 
@@ -12,6 +12,7 @@ from app.data.downloader import MT5Downloader
 from app.data.providers.mt5 import MT5Provider
 from app.data.time_profile import get_metaquotes_demo_phase1_profile, utc_to_mt5_label
 
+
 def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, start_ts, end_ts):
     df_canonical = pd.read_parquet(canonical_path)
     df_raw = pd.concat([pd.read_parquet(f) for f in raw_files])
@@ -22,6 +23,7 @@ def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, st
     
     assert "timestamp" in df_canonical.columns, "canonical timestamp exists"
     assert "time" not in df_canonical.columns, "canonical Parquet does not contain source time"
+    assert "time_msc" not in df_canonical.columns, "canonical Parquet does not contain source time_msc"
     assert df_canonical["timestamp"].dt.tz is not None, "canonical timestamps are UTC (aware)"
     assert str(df_canonical["timestamp"].dt.tz) == "UTC", "canonical timestamps are exactly UTC"
     
@@ -39,8 +41,16 @@ def verify_raw_canonical_equivalence(raw_files, canonical_path, time_profile, st
     # 5. Compare the translated raw timestamp set/sequence against the canonical Parquet timestamp values
     # 6. Require exact equality
     # We should sort both just to be safe
-    # MT5 API chunking naturally overlaps the boundary bar. Deduplicate to reconstruct the unique raw set.
-    df_raw_filtered = df_raw_filtered.drop_duplicates(subset=["time"])
+    # MT5 API chunking naturally overlaps the boundary bar. We must only deduplicate EXACT matches.
+    # If a duplicate has conflicting OHLCV values, it is a source defect and must fail.
+    dups = df_raw_filtered[df_raw_filtered.duplicated(subset=["time"], keep=False)]
+    if not dups.empty:
+        # If dropping all exactly identical rows leaves more rows than unique timestamps, we have a conflict
+        unique_dups = dups.drop_duplicates()
+        assert len(unique_dups) == len(dups['time'].unique()), "Duplicate raw timestamps found with conflicting OHLCV data"
+        
+    df_raw_filtered = df_raw_filtered.drop_duplicates()
+    assert not df_raw_filtered.duplicated(subset=["time"]).any(), "Unexpected duplicate timestamps remain"
     df_raw_filtered = df_raw_filtered.sort_values("translated_timestamp").reset_index(drop=True)
     df_canonical_sorted = df_canonical.sort_values("timestamp").reset_index(drop=True)
     
