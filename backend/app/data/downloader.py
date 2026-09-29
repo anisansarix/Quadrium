@@ -77,6 +77,10 @@ class MT5Downloader:
         
         # We explicitly sort and then validate. We do not drop duplicates.
         # If duplicates exist, validate_dataframe will fail closed.
+        if "time" in df_full.columns:
+            df_full = df_full.drop(columns=["time"])
+        if "time_msc" in df_full.columns:
+            df_full = df_full.drop(columns=["time_msc"])
         df_full = df_full.sort_values("timestamp")
         validate_dataframe(df_full, expected_symbol=symbol, expected_timeframe=timeframe)
         
