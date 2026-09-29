@@ -98,6 +98,7 @@ def resample_bars(df: pd.DataFrame, target_timeframe: str) -> pd.DataFrame:
 
     df = df.copy()
     df = validate_utc_timestamps(df)
+    df = df.sort_values('timestamp').reset_index(drop=True)
 
     if target_timeframe not in TIMEFRAME_MINUTES:
         raise ValueError(f"Unknown target timeframe {target_timeframe}")
@@ -166,6 +167,7 @@ def compute_baseline_features(df: pd.DataFrame) -> pd.DataFrame:
 
     df = df.copy()
     df = validate_utc_timestamps(df)
+    df = df.sort_values('timestamp').reset_index(drop=True)
     df = df.sort_values("timestamp").reset_index(drop=True)
 
     source_tf = df['timeframe'].iloc[0]

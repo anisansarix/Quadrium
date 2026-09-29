@@ -376,4 +376,3 @@ class FeatureManifest(BaseModel):
             raise ValueError("feature_columns cannot be empty")
 
         return self
-

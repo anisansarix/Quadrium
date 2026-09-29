@@ -172,6 +172,15 @@ def test_invalid_timeframe_combinations():
     with pytest.raises(ValueError, match="Unknown target timeframe"):
         resample_bars(df, 'M3')
 
+def test_resampling_unsorted_input():
+    df = get_synthetic_data(10)
+    df_unsorted = df.sample(frac=1.0, random_state=42)
+
+    res_sorted = resample_bars(df, 'M5')
+    res_unsorted = resample_bars(df_unsorted, 'M5')
+
+    pd.testing.assert_frame_equal(res_sorted, res_unsorted)
+
 def test_manifest_validation():
     with pytest.raises(ValueError, match="Timestamps must be timezone-aware UTC"):
         FeatureManifest(

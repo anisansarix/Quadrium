@@ -2,7 +2,7 @@
 
 ## 1. Input: Canonical Market Data Schema
 All features MUST be derived from the strictly defined canonical market data representation.
-The input canonical dataset MUST contain exactly the following fields:
+Every canonical processing input MUST contain the following required fields:
 * 	imestamp (timezone-aware UTC, referencing the start of the bar)
 * symbol (string)
 * 	imeframe (string, e.g., "M1")
@@ -24,25 +24,32 @@ A feature dataset MUST NOT be merely a pandas DataFrame of numerical columns. It
 * symbol (string)
 * 	imeframe (string)
 * data_state (string Enum: OBSERVED, SOURCE_SPARSE, INVALID)
-* eature_state (string Enum: VALID, WARMUP, INVALID)
-* eature_columns (one or more strictly named numerical/categorical columns)
+*
+eature_state (string Enum: VALID, WARMUP, INVALID)
+*
+eature_columns (one or more strictly named numerical/categorical columns)
 
 Additionally, the dataset generation must produce a FeatureManifest containing lineage metadata:
-* eature_dataset_id (string)
+*
+eature_dataset_id (string)
 * source_dataset_hash (string, SHA-256 of the canonical input dataset)
 * symbol (string)
 * source_timeframe (string)
-* eature_timeframe (string)
-* eature_schema_version (string)
+*
+eature_timeframe (string)
+*
+eature_schema_version (string)
 * 	ransformation_version (string)
 * configuration_version (string)
-* eature_fingerprint (string, SHA-256 of the resulting feature dataset)
+*
+eature_fingerprint (string, SHA-256 of the resulting feature dataset)
 * 	imestamp_start (datetime UTC)
 * 	imestamp_end (datetime UTC)
 *
 ow_count (integer)
 * created_at (datetime UTC)
-* eature_columns (list of strings)
+*
+eature_columns (list of strings)
 
 ## 3. Observation Timing & Causality Contract
 **Rule:** No feature may use information from a bar that would not have been known at the decision timestamp.
@@ -75,16 +82,20 @@ A timestamp gap marks a break in contiguity and is detected when the difference 
 Phase 2A treats any source-timeframe discontinuity as a non-crossable boundary. Scheduled session classification is deferred.
 Regardless of classification, resampling and rolling features MUST NEVER aggregate or cross the boundary.
 
-**Validity Rule across Gaps (eature_state):**
+**Validity Rule across Gaps (
+eature_state):**
 A timestamp gap breaks feature continuity. The first available row after a gap may have data_state = OBSERVED or SOURCE_SPARSE.
-However, because trustworthy historical continuity was broken, its eature_state = INVALID.
-Subsequent rows remain eature_state = INVALID until the required contiguous lookback has been rebuilt.
+However, because trustworthy historical continuity was broken, its
+eature_state = INVALID.
+Subsequent rows remain
+eature_state = INVALID until the required contiguous lookback has been rebuilt.
 Once the required contiguous lookback is satisfied, the feature state becomes VALID.
 
 ## 6. Warm-up Semantics
 Every rolling feature MUST define a finite warm-up period.
 WARMUP is strictly reserved ONLY for ordinary initial lookback insufficiency where there is NO data-quality discontinuity (i.e. the start of the dataset).
-* During warm-up, the specific feature value MUST be NaN and eature_state = WARMUP.
+* During warm-up, the specific feature value MUST be NaN and
+eature_state = WARMUP.
 * Warm-up values MUST NOT be forward-filled or extrapolated.
 
 ## 7. Scaling & Normalization Contract
@@ -120,7 +131,8 @@ et_simple (Simple return over 1 period, warmup: 1)
 3.
 ange_pct ((High - Low) / Open, warmup: 0)
 4. 	r (True Range, warmup: 1)
-5. ol_20 (Rolling volatility, 20-period standard deviation of
+5.
+ol_20 (Rolling volatility, 20-period standard deviation of
 et_1, warmup: 20 periods of
 et_1 -> 21 bars)
 6. dist_ma_20 (Normalized distance from 20-period moving average, warmup: 20)
