@@ -9,7 +9,7 @@ from app.data.catalog import DatasetCatalog
 from app.data.coverage import ConfigurableCalendar, ConfigurableCalendarConfig, SessionWindow
 from app.data.datasets import DatasetManager
 from app.data.downloader import MT5Downloader, RawChunkArtifact
-from app.data.providers.mt5 import MT5Provider
+from app.data.providers.mt5 import MT5Error, MT5Provider
 from app.data.time_profile import get_metaquotes_demo_phase1_profile, utc_to_mt5_label
 
 
@@ -148,7 +148,7 @@ def run_test(start_ts, end_ts, name, calendar):
     provider = MT5Provider(**kwargs)
     try:
         provider.connect()
-    except Exception as e:
+    except MT5Error as e:
         print(f"FAIL: MT5Provider connect failed: {e}")
         return False
         
@@ -163,55 +163,48 @@ def run_test(start_ts, end_ts, name, calendar):
         print(f"Translated MT5 Request Start (Raw): {utc_to_mt5_label(r_start, offset)}")
         print(f"Translated MT5 Request End (Raw): {utc_to_mt5_label(r_end, offset)}")
     
-    try:
-        artifact = downloader.download_bars("EURUSD", "M1", start_ts, end_ts, chunk_days=2)
-        print("\n--- RETURN ---")
-        
-        raw_chunks = artifact.raw_chunks
-        assert len(raw_chunks) > 0, "Raw chunks must exist"
-        
-        df_raw, df_canonical = verify_raw_canonical_equivalence(raw_chunks, artifact.canonical_path, time_profile, start_ts, end_ts)
-        
-        print(f"First Canonical UTC: {df_canonical['timestamp'].min()}")
-        print(f"Last Canonical UTC: {df_canonical['timestamp'].max()}")
-        print(f"First Raw Timestamp (Epoch): {df_raw['time'].min()}")
-        print(f"Last Raw Timestamp (Epoch): {df_raw['time'].max()}")
-        
-        sm = artifact.manifest.source_metadata
-        assert "source_time_basis" in sm, "manifest contains source_time_basis"
-        assert "canonical_time_basis" in sm, "manifest contains canonical_time_basis"
-        assert "time_profile_id" in sm, "manifest contains time_profile_id"
-        
-        assert sm["source_time_basis"] == "broker_server_wallclock", "source_time_basis is not correct"
-        assert sm["canonical_time_basis"] == "UTC", "canonical_time_basis is not correct"
-        assert sm["time_profile_id"] == "metaquotes_demo_eurusd_phase1_v1", "time_profile_id is not correct"
-        
-        print("\n--- METRICS ---")
-        qr = artifact.quality_report
-        print(f"Expected Bars: {qr.expected_bars}")
-        print(f"Observed Bars: {qr.observed_bars}")
-        print(f"Sparse Bars (NO_TICKS): {qr.source_sparse_bars}")
-        print(f"Ticks-Present/Bar-Missing: {qr.ticks_present_bar_missing}")
-        print(f"Unexpected Extra Bars: {qr.unexpected_extra_bars}")
-        print(f"Quality Status: {qr.quality_status}")
-        
-        first_valid = df_canonical['timestamp'].min() >= start_ts
-        last_valid = df_canonical['timestamp'].max() < end_ts
-        print(f"\nFirst Canonical >= Requested Start: {first_valid}")
-        print(f"Last Canonical < Requested End: {last_valid}")
-        print(f"No Extras: {qr.unexpected_extra_bars == 0}")
-        
-        if first_valid and last_valid and qr.quality_status == "PASS" and qr.unexpected_extra_bars == 0:
-            print("\nRESULT: PASS")
-            return True
-        else:
-            print("\nRESULT: FAIL")
-            return False
-            
-    except Exception as e:
-        import traceback
-        print(f"\nRESULT: FAIL - Exception during download: {e}")
-        traceback.print_exc()
+    artifact = downloader.download_bars("EURUSD", "M1", start_ts, end_ts, chunk_days=2)
+    print("\n--- RETURN ---")
+    
+    raw_chunks = artifact.raw_chunks
+    assert len(raw_chunks) > 0, "Raw chunks must exist"
+    
+    df_raw, df_canonical = verify_raw_canonical_equivalence(raw_chunks, artifact.canonical_path, time_profile, start_ts, end_ts)
+    
+    print(f"First Canonical UTC: {df_canonical['timestamp'].min()}")
+    print(f"Last Canonical UTC: {df_canonical['timestamp'].max()}")
+    print(f"First Raw Timestamp (Epoch): {df_raw['time'].min()}")
+    print(f"Last Raw Timestamp (Epoch): {df_raw['time'].max()}")
+    
+    sm = artifact.manifest.source_metadata
+    assert "source_time_basis" in sm, "manifest contains source_time_basis"
+    assert "canonical_time_basis" in sm, "manifest contains canonical_time_basis"
+    assert "time_profile_id" in sm, "manifest contains time_profile_id"
+    
+    assert sm["source_time_basis"] == "broker_server_wallclock", "source_time_basis is not correct"
+    assert sm["canonical_time_basis"] == "UTC", "canonical_time_basis is not correct"
+    assert sm["time_profile_id"] == "metaquotes_demo_eurusd_phase1_v1", "time_profile_id is not correct"
+    
+    print("\n--- METRICS ---")
+    qr = artifact.quality_report
+    print(f"Expected Bars: {qr.expected_bars}")
+    print(f"Observed Bars: {qr.observed_bars}")
+    print(f"Sparse Bars (NO_TICKS): {qr.source_sparse_bars}")
+    print(f"Ticks-Present/Bar-Missing: {qr.ticks_present_bar_missing}")
+    print(f"Unexpected Extra Bars: {qr.unexpected_extra_bars}")
+    print(f"Quality Status: {qr.quality_status}")
+    
+    first_valid = df_canonical['timestamp'].min() >= start_ts
+    last_valid = df_canonical['timestamp'].max() < end_ts
+    print(f"\nFirst Canonical >= Requested Start: {first_valid}")
+    print(f"Last Canonical < Requested End: {last_valid}")
+    print(f"No Extras: {qr.unexpected_extra_bars == 0}")
+    
+    if first_valid and last_valid and qr.quality_status == "PASS" and qr.unexpected_extra_bars == 0:
+        print("\nRESULT: PASS")
+        return True
+    else:
+        print("\nRESULT: FAIL")
         return False
 
 def main():

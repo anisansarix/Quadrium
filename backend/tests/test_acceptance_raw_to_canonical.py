@@ -185,3 +185,35 @@ def test_acceptance_exit_behavior():
         with pytest.raises(SystemExit) as e:
             main()
         assert e.value.code == 1
+
+def test_run_test_exceptions():
+    from datetime import UTC, datetime
+    from unittest.mock import MagicMock, patch
+
+    from app.data.providers.mt5 import MT5Error
+    from scripts.mt5_time_translation_acceptance import run_test
+    
+    start_ts = datetime(2026, 9, 24, 0, 0, tzinfo=UTC)
+    end_ts = datetime(2026, 9, 25, 0, 0, tzinfo=UTC)
+    
+    # 1. MT5Error during provider connection produces False
+    with patch("scripts.mt5_time_translation_acceptance.MT5Provider") as mock_provider_cls:
+        mock_provider = MagicMock()
+        mock_provider.connect.side_effect = MT5Error("Connection failed")
+        mock_provider_cls.return_value = mock_provider
+        
+        result = run_test(start_ts, end_ts, "test_name", None)
+        assert result is False
+
+    # 2. Unexpected exception during download/verification propagates rather than being swallowed
+    with patch("scripts.mt5_time_translation_acceptance.MT5Provider") as mock_provider_cls, \
+         patch("scripts.mt5_time_translation_acceptance.MT5Downloader") as mock_downloader_cls:
+        mock_provider = MagicMock()
+        mock_provider_cls.return_value = mock_provider
+        
+        mock_downloader = MagicMock()
+        mock_downloader.download_bars.side_effect = ValueError("Unexpected defect")
+        mock_downloader_cls.return_value = mock_downloader
+        
+        with pytest.raises(ValueError, match="Unexpected defect"):
+            run_test(start_ts, end_ts, "test_name", None)
