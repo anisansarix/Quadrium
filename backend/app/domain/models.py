@@ -130,7 +130,7 @@ class OrderIntent(BaseModel):
 class RiskPolicy(BaseModel):
     """
     Risk policy constraints mapping.
-    
+
     Units and semantic implementation:
     - max_daily_loss_pct: float [0.0 - 1.0], implemented as FREEZE
     - max_drawdown_pct: float [0.0 - 1.0], implemented as FLATTEN
@@ -143,7 +143,7 @@ class RiskPolicy(BaseModel):
     - require_sl: bool, implemented as REJECT
     - session_constraints: dict, NOT IMPLEMENTED (TODO)
     - leverage_limit: float, multiplier of equity to gross notional, implemented as CLAMP
-    
+
     The deterministic phase assumes a single USD account, single symbol, and USD profit currency.
     """
     id: str
@@ -330,18 +330,40 @@ class DataState(str, Enum):
     SOURCE_SPARSE = "SOURCE_SPARSE"
     INVALID = "INVALID"
 
+
+
+
+class FeatureState(str, Enum):
+    VALID = "VALID"
+    WARMUP = "WARMUP"
+    INVALID = "INVALID"
+
 class FeatureManifest(BaseModel):
-    feature_dataset_id: str
-    source_dataset_hash: str
-    symbol: str
-    source_timeframe: str
-    feature_timeframe: str
-    feature_schema_version: str
-    transformation_version: str
-    configuration_version: str
-    feature_fingerprint: str
+    feature_dataset_id: str = Field(min_length=1)
+    source_dataset_hash: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    source_timeframe: str = Field(min_length=1)
+    feature_timeframe: str = Field(min_length=1)
+    feature_schema_version: str = Field(min_length=1)
+    transformation_version: str = Field(min_length=1)
+    configuration_version: str = Field(min_length=1)
+    feature_fingerprint: str = Field(min_length=1)
     timestamp_start: datetime
     timestamp_end: datetime
-    row_count: int
+    row_count: int = Field(ge=0)
     created_at: datetime
     feature_columns: list[str]
+
+    @model_validator(mode='after')
+    def validate_manifest(self) -> 'FeatureManifest':
+        for dt_field in [self.timestamp_start, self.timestamp_end, self.created_at]:
+            if dt_field.tzinfo is None or str(dt_field.tzinfo) != 'UTC':
+                raise ValueError("Timestamps must be timezone-aware UTC")
+
+        if self.timestamp_start >= self.timestamp_end and self.row_count > 1:
+            raise ValueError("timestamp_start must be before timestamp_end")
+
+        if not self.feature_columns:
+            raise ValueError("feature_columns cannot be empty")
+
+        return self
