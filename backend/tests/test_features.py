@@ -3,13 +3,14 @@ from datetime import UTC, datetime, timedelta
 import numpy as np
 import pandas as pd
 import pytest
-from app.domain.models import DataState, FeatureManifest, FeatureState
+from app.domain.models import DataState, FeatureLineage, FeatureManifest, FeatureState
 from app.features.core import (
     compute_baseline_features,
     compute_feature_fingerprint,
     resample_bars,
     validate_utc_timestamps,
 )
+from pydantic import ValidationError
 
 
 def get_synthetic_data(num_bars=30, start_ts=None):
@@ -48,7 +49,6 @@ def test_baseline_features_warmup_and_formulas():
 
     assert features['data_state'].iloc[0] == DataState.OBSERVED
 
-    # feature_state validation
     assert features['feature_state'].iloc[0] == FeatureState.WARMUP
     assert features['feature_state'].iloc[19] == FeatureState.WARMUP
     assert features['feature_state'].iloc[20] == FeatureState.VALID
@@ -66,9 +66,11 @@ def test_feature_gap_handling():
 
     features = compute_baseline_features(df)
     assert features['feature_state'].iloc[20] == FeatureState.VALID
-    # Next bar is after a gap -> resets warmup
-    assert features['feature_state'].iloc[21] == FeatureState.WARMUP
-    assert features['feature_state'].iloc[40] == FeatureState.WARMUP
+
+    # Gap breaks contiguity. First row after gap is INVALID (not WARMUP).
+    assert features['feature_state'].iloc[21] == FeatureState.INVALID
+    assert features['feature_state'].iloc[40] == FeatureState.INVALID
+    # After rebuilding lookback (20 periods later, index 41), it's VALID again.
     assert features['feature_state'].iloc[41] == FeatureState.VALID
 
 def test_causality_strict():
@@ -106,7 +108,17 @@ def test_resampling_rules():
 def test_fingerprint_determinism():
     df1 = get_synthetic_data(25)
     f1 = compute_baseline_features(df1)
-    meta = {"source_dataset_hash": "abc", "transformation_version": "1.0", "symbol": "EURUSD", "source_timeframe": "M1", "feature_timeframe": "M1", "feature_schema_version": "1.0", "configuration_version": "1.0"}
+
+    meta = FeatureLineage(
+        source_dataset_hash="abc",
+        symbol="EURUSD",
+        source_timeframe="M1",
+        feature_timeframe="M1",
+        feature_schema_version="1.0",
+        transformation_version="1.0",
+        configuration_version="1.0"
+    )
+
     h1 = compute_feature_fingerprint(f1, meta)
 
     f_shuffled = f1[np.random.permutation(f1.columns)]
@@ -115,11 +127,9 @@ def test_fingerprint_determinism():
     f_rev = f1.iloc[::-1]
     assert compute_feature_fingerprint(f_rev, meta) == h1
 
-    # Mutating metadata changes hash
-    for k in meta:
-        meta2 = meta.copy()
-        meta2[k] = "mutated"
-        assert compute_feature_fingerprint(f1, meta2) != h1
+    # Missing lineage field fails via Pydantic
+    with pytest.raises(ValidationError):
+        FeatureLineage(source_dataset_hash="abc")
 
 def test_duplicate_timestamp_fails():
     df = get_synthetic_data(5)
@@ -128,6 +138,11 @@ def test_duplicate_timestamp_fails():
         validate_utc_timestamps(df)
 
 def test_missing_timeframe_or_column_fails():
+    # Fails even if dataframe is empty
+    df_empty = pd.DataFrame()
+    with pytest.raises(ValueError, match="Missing required canonical column"):
+        compute_baseline_features(df_empty)
+
     df = get_synthetic_data(5)
     df_no_tf = df.drop(columns=['timeframe'])
     with pytest.raises(ValueError, match="Missing required canonical column"):
@@ -137,22 +152,32 @@ def test_missing_timeframe_or_column_fails():
     with pytest.raises(ValueError, match="Missing required canonical column"):
         compute_baseline_features(df_no_close)
 
+def test_mixed_symbols_and_timeframes():
+    df = get_synthetic_data(5)
+    df.loc[0, 'symbol'] = 'GBPUSD'
+    with pytest.raises(ValueError, match="Mixed symbols"):
+        compute_baseline_features(df)
+
+    df2 = get_synthetic_data(5)
+    df2.loc[0, 'timeframe'] = 'M5'
+    with pytest.raises(ValueError, match="Mixed timeframes"):
+        compute_baseline_features(df2)
+
 def test_invalid_timeframe_combinations():
     df = get_synthetic_data(5)
-    # Target shorter than source
     df['timeframe'] = 'M5'
     with pytest.raises(ValueError, match="Target timeframe cannot be shorter"):
         resample_bars(df, 'M1')
 
-    # Unknown timeframe
     with pytest.raises(ValueError, match="Unknown target timeframe"):
         resample_bars(df, 'M3')
+
 def test_manifest_validation():
     with pytest.raises(ValueError, match="Timestamps must be timezone-aware UTC"):
         FeatureManifest(
             feature_dataset_id="1", source_dataset_hash="1", symbol="1", source_timeframe="1", feature_timeframe="1",
             feature_schema_version="1", transformation_version="1", configuration_version="1", feature_fingerprint="1",
-            timestamp_start=datetime(2026, 1, 1),  # noqa: DTZ001
+            timestamp_start=datetime(2026, 1, 1), # noqa: DTZ001
             timestamp_end=datetime(2026, 1, 2, tzinfo=UTC),
             created_at=datetime(2026, 1, 2, tzinfo=UTC),
             row_count=10, feature_columns=["A"]

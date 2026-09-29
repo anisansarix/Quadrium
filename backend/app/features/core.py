@@ -1,11 +1,9 @@
 import hashlib
-import json
-from typing import Any
 
 import numpy as np
 import pandas as pd
 
-from app.domain.models import DataState, FeatureState
+from app.domain.models import DataState, FeatureLineage, FeatureState
 
 TIMEFRAME_MINUTES = {
     'M1': 1,
@@ -13,6 +11,25 @@ TIMEFRAME_MINUTES = {
     'M15': 15,
     'H1': 60
 }
+
+REQUIRED_CANONICAL_COLS = [
+    'timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close',
+    'tick_volume', 'spread', 'real_volume'
+]
+
+def validate_canonical_input(df: pd.DataFrame) -> None:
+    for c in REQUIRED_CANONICAL_COLS:
+        if c not in df.columns:
+            raise ValueError(f"Missing required canonical column: {c}")
+
+    if df.empty:
+        return
+
+    if df['symbol'].nunique() > 1:
+        raise ValueError("Mixed symbols in input are not permitted.")
+
+    if df['timeframe'].nunique() > 1:
+        raise ValueError("Mixed timeframes in input are not permitted.")
 
 def validate_utc_timestamps(df: pd.DataFrame, col: str = 'timestamp') -> pd.DataFrame:
     """Enforces strict UTC timezone awareness. Fails on naive."""
@@ -26,16 +43,13 @@ def validate_utc_timestamps(df: pd.DataFrame, col: str = 'timestamp') -> pd.Data
         df = df.copy()
         df[col] = df[col].dt.tz_convert('UTC')
 
-    # Reject duplicates
     if df[col].duplicated().any():
         raise ValueError("Duplicate timestamps found in dataset.")
 
     return df
 
-def compute_feature_fingerprint(df: pd.DataFrame, manifest_dict: dict[str, Any]) -> str:
+def compute_feature_fingerprint(df: pd.DataFrame, lineage: FeatureLineage) -> str:
     df_clean = df.copy()
-
-    # Reject naive, normalize to UTC, reject duplicates
     df_clean = validate_utc_timestamps(df_clean)
 
     df_clean = df_clean.sort_values(by="timestamp").reset_index(drop=True)
@@ -59,7 +73,7 @@ def compute_feature_fingerprint(df: pd.DataFrame, manifest_dict: dict[str, Any])
     df_clean.to_parquet(buf, index=False)
 
     hasher = hashlib.sha256()
-    serialized_meta = json.dumps(manifest_dict, sort_keys=True)
+    serialized_meta = lineage.model_dump_json()
     hasher.update(serialized_meta.encode('utf-8'))
     hasher.update(buf.getvalue())
     return hasher.hexdigest()
@@ -76,26 +90,21 @@ def mark_data_state(df: pd.DataFrame, timeframe_minutes: int) -> pd.DataFrame:
 
     return df
 
-def resample_bars(df: pd.DataFrame, target_timeframe: str, calendar=None) -> pd.DataFrame:
+def resample_bars(df: pd.DataFrame, target_timeframe: str) -> pd.DataFrame:
+    validate_canonical_input(df)
+
     if df.empty:
         return df
 
     df = df.copy()
-
-    # Required columns validation
-    req_cols = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
-    for c in req_cols:
-        if c not in df.columns:
-            raise ValueError(f"Missing required canonical column: {c}")
-
     df = validate_utc_timestamps(df)
 
     if target_timeframe not in TIMEFRAME_MINUTES:
         raise ValueError(f"Unknown target timeframe {target_timeframe}")
 
     target_minutes = TIMEFRAME_MINUTES[target_timeframe]
-
     source_tf = df['timeframe'].iloc[0]
+
     if source_tf not in TIMEFRAME_MINUTES:
         raise ValueError(f"Unknown source timeframe {source_tf}")
 
@@ -111,11 +120,7 @@ def resample_bars(df: pd.DataFrame, target_timeframe: str, calendar=None) -> pd.
 
     df = df.set_index('timestamp')
 
-    # Session boundary vs unexpected gap
-    # A gap > source_minutes means a break.
-    # If calendar is provided, we could distinguish. But even without it, any gap > source_minutes prevents aggregation.
-    # The requirement: "never aggregate across either type of boundary".
-    # So we strictly split blocks at any gap > source_minutes.
+    # Session boundary vs unexpected gap: both are treated as non-crossable boundaries.
     diffs = df.index.to_series().diff().dt.total_seconds() / 60.0
     session_id = (diffs > source_minutes).cumsum().fillna(0)
     df['session_id'] = session_id
@@ -154,16 +159,12 @@ def resample_bars(df: pd.DataFrame, target_timeframe: str, calendar=None) -> pd.
     return resampled
 
 def compute_baseline_features(df: pd.DataFrame) -> pd.DataFrame:
+    validate_canonical_input(df)
+
     if df.empty:
         return pd.DataFrame()
 
     df = df.copy()
-
-    req_cols = ['timestamp', 'symbol', 'timeframe', 'open', 'high', 'low', 'close', 'tick_volume', 'spread', 'real_volume']
-    for c in req_cols:
-        if c not in df.columns:
-            raise ValueError(f"Missing required canonical column: {c}")
-
     df = validate_utc_timestamps(df)
     df = df.sort_values("timestamp").reset_index(drop=True)
 
@@ -199,21 +200,18 @@ def compute_baseline_features(df: pd.DataFrame) -> pd.DataFrame:
     df['spread_level'] = df['spread']
     df['spread_delta'] = grouped['spread'].transform(lambda x: x - x.shift(1))
 
-    # Feature State Logic
     df['feature_state'] = FeatureState.VALID
 
-    # Warmup identification
-    # A row is in WARMUP if any required feature is NaN (which pandas naturally sets during warmup across the block_id group)
-    is_warmup = (
+    is_incomplete = (
         df['vol_20'].isna() |
         df['dist_ma_20'].isna() |
         df['tr'].isna() |
         df['tick_vol_change'].isna()
     )
 
-    df.loc[is_warmup, 'feature_state'] = FeatureState.WARMUP
+    df.loc[is_incomplete & (df['block_id'] == 0), 'feature_state'] = FeatureState.WARMUP
+    df.loc[is_incomplete & (df['block_id'] > 0), 'feature_state'] = FeatureState.INVALID
 
-    # Invalid overrides warmup
     df.loc[df['data_state'] == DataState.INVALID, 'feature_state'] = FeatureState.INVALID
 
     feature_cols = [

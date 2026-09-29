@@ -338,6 +338,15 @@ class FeatureState(str, Enum):
     WARMUP = "WARMUP"
     INVALID = "INVALID"
 
+class FeatureLineage(BaseModel):
+    source_dataset_hash: str = Field(min_length=1)
+    symbol: str = Field(min_length=1)
+    source_timeframe: str = Field(min_length=1)
+    feature_timeframe: str = Field(min_length=1)
+    feature_schema_version: str = Field(min_length=1)
+    transformation_version: str = Field(min_length=1)
+    configuration_version: str = Field(min_length=1)
+
 class FeatureManifest(BaseModel):
     feature_dataset_id: str = Field(min_length=1)
     source_dataset_hash: str = Field(min_length=1)
@@ -360,10 +369,11 @@ class FeatureManifest(BaseModel):
             if dt_field.tzinfo is None or str(dt_field.tzinfo) != 'UTC':
                 raise ValueError("Timestamps must be timezone-aware UTC")
 
-        if self.timestamp_start >= self.timestamp_end and self.row_count > 1:
-            raise ValueError("timestamp_start must be before timestamp_end")
+        if self.row_count > 0 and self.timestamp_start > self.timestamp_end:
+            raise ValueError("timestamp_start must be <= timestamp_end")
 
         if not self.feature_columns:
             raise ValueError("feature_columns cannot be empty")
 
         return self
+
