@@ -115,13 +115,18 @@ class TimeProfile(BaseModel):
             
         return valid_utcs[0]
         
-    def add_canonical_column(self, df, raw_col='time', new_col='timestamp'):
+    def add_canonical_column(self, df, raw_col='time', new_col='timestamp', is_msc=False):
         import pandas as pd
         if df.empty:
             df[new_col] = pd.Series(dtype='datetime64[ns, UTC]')
             return df
         
         def _convert(x):
+            if is_msc:
+                sec = int(x // 1000)
+                msc = int(x % 1000)
+                dt = self.convert_raw_to_utc(sec)
+                return pd.Timestamp(dt) + pd.Timedelta(milliseconds=msc)
             return pd.Timestamp(self.convert_raw_to_utc(x))
                 
         df[new_col] = df[raw_col].apply(_convert)

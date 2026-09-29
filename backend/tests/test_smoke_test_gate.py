@@ -50,7 +50,6 @@ def setup_mocks(mock_val, mock_mgr, mock_downloader, mock_provider, all_passed=T
         unexpected_missing_bars=0,
         known_closure_bars=0,
             unexpected_extra_bars=0,
-            duplicate_bars=0,
         quality_status=q_status
     )
     mock_artifact.quality_report = mock_qr

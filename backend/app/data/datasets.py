@@ -116,7 +116,7 @@ class DatasetManager:
         source_metadata: dict[str, Any],
         schema_version: str = "1.0"
     ) -> DatasetManifest:
-        df = df.sort_values("timestamp").drop_duplicates(subset=["timestamp"], keep="last")
+        df = df.sort_values("timestamp")
         
         ds_hash = hash_dataframe(df, schema_version)
         

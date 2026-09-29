@@ -67,19 +67,18 @@ class MT5Downloader:
                 tp = self.provider._time_profile
                 df_p = tp.add_canonical_column(df_p, raw_col='time', new_col='timestamp')
             else:
-                # Fallback if no profile is used, assume raw time is UTC epoch (incorrect but safe fallback)
-                df_p['timestamp'] = pd.to_datetime(df_p['time'], unit='s', utc=True)
+                raise ValueError("Explicit TimeProfile is required for canonicalization. No-profile fallback is disallowed.")
                 
             # Now we can filter strictly by canonical UTC!
             df_p = df_p[(df_p['timestamp'] >= c_start) & (df_p['timestamp'] < c_end)]
             df_list.append(df_p)
             
         df_full = pd.concat(df_list, ignore_index=True)
-        validate_dataframe(df_full, expected_symbol=symbol, expected_timeframe=timeframe)
         
-        initial_len = len(df_full)
+        # We explicitly sort and then validate. We do not drop duplicates.
+        # If duplicates exist, validate_dataframe will fail closed.
         df_full = df_full.sort_values("timestamp")
-        duplicates_count = initial_len - len(df_full)
+        validate_dataframe(df_full, expected_symbol=symbol, expected_timeframe=timeframe)
         
         coverage_status, expected_timestamps = evaluate_coverage(df_full, start, end, timeframe, self.calendar)
         
@@ -97,7 +96,7 @@ class MT5Downloader:
         if coverage_status == "PARTIAL" and gap_report.unexpected_missing_bars == 0:
             coverage_status = "SPARSE"
             
-        if coverage_status == "EMPTY" or coverage_status == "PARTIAL" or gap_report.unexpected_missing_bars > 0 or gap_report.unexpected_extra_bars > 0 or duplicates_count > 0:
+        if coverage_status == "EMPTY" or coverage_status == "PARTIAL" or gap_report.unexpected_missing_bars > 0 or gap_report.unexpected_extra_bars > 0:
             quality_status = "FAIL"
         else:
             quality_status = "PASS"
@@ -114,7 +113,6 @@ class MT5Downloader:
             unexpected_missing_bars=gap_report.unexpected_missing_bars,
             known_closure_bars=gap_report.known_closure_bars,
             unexpected_extra_bars=gap_report.unexpected_extra_bars,
-            duplicate_bars=int(duplicates_count),
             quality_status=cast(Literal["PASS", "WARNING", "FAIL"], quality_status)
         )
         

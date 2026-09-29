@@ -38,7 +38,11 @@ Time translation is driven by explicit TimeProfile models (e.g., metaquotes_demo
 
 ## Current MetaQuotes-Demo Phase-1 Limitation
 
-The MetaQuotes-Demo EURUSD server currently runs at UTC+3 (EEST). We explicitly lock the Phase-1 profile to a static +3.0 hour offset. Because DST transitions historically shift broker offsets (e.g., to UTC+2 in winter), future historical ingestion will require mapping the complete DST schedule within the TimeProfile.
+The MetaQuotes-Demo EURUSD server currently runs at UTC+3 (EEST). 
+Phase 1 strictly supports this **static +3 MetaQuotes-Demo EURUSD profile**.
+
+**Important Historical DST Boundary Note:**
+Historical transitions (e.g., UTC+3 -> UTC+2 in winter and UTC+2 -> UTC+3 in summer) are **not yet production-ingestable**. A future historical implementation must preserve the offset-period provenance for each raw fetch segment. If raw fetch segments across DST transitions are naively concatenated without their offset metadata, raw timestamps within the transition overlap become mathematically ambiguous and cannot be securely inverted to UTC. Do not implement the full historical DST schedule until this offset-provenance mechanism is designed.
 
 ## Why Local Machine Timezone is Never Used
 

@@ -164,7 +164,6 @@ def main():
             report += f"""- **Observed Bars**: {qr.observed_bars}\n"""
             report += f"""- **Sparse Bars**: {qr.source_sparse_bars}\n"""
             report += f"""- **Ticks-Present/Bar-Missing**: {qr.ticks_present_bar_missing}\n- **Known Closure Bars**: {qr.known_closure_bars}\n"""
-            report += f"""- **Duplicates**: {qr.duplicate_bars}\n"""
             report += f"""- **Coverage**: {qr.coverage_status}\n"""
             report += f"""- **Quality**: {qr.quality_status}\n"""
         else:

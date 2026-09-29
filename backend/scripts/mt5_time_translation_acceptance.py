@@ -66,13 +66,11 @@ def run_test(start_ts, end_ts, name, calendar):
         
         print("\n--- METRICS ---")
         qr = artifact.quality_report
-        gr = artifact.gap_report
         print(f"Expected Bars: {qr.expected_bars}")
         print(f"Observed Bars: {qr.observed_bars}")
         print(f"Sparse Bars (NO_TICKS): {qr.source_sparse_bars}")
         print(f"Ticks-Present/Bar-Missing: {qr.ticks_present_bar_missing}")
         print(f"Unexpected Extra Bars: {qr.unexpected_extra_bars}")
-        print(f"Duplicate Bars: {qr.duplicate_bars}")
         print(f"Quality Status: {qr.quality_status}")
         
         # Verify conditions
@@ -81,9 +79,8 @@ def run_test(start_ts, end_ts, name, calendar):
         print(f"\nFirst Canonical >= Requested Start: {first_valid}")
         print(f"Last Canonical < Requested End: {last_valid}")
         print(f"No Extras: {qr.unexpected_extra_bars == 0}")
-        print(f"No Duplicates: {qr.duplicate_bars == 0}")
         
-        if first_valid and last_valid and qr.quality_status == "PASS" and qr.unexpected_extra_bars == 0 and qr.duplicate_bars == 0:
+        if first_valid and last_valid and qr.quality_status == "PASS" and qr.unexpected_extra_bars == 0:
             print("\nRESULT: PASS")
             return True
         else:
